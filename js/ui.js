@@ -48,7 +48,10 @@ const ICON_PATHS = {
   search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/>',
   timer: '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 2h6"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
-  reset: '<path d="M4 12a8 8 0 1 1 2.4 5.7"/><path d="M4 19v-6h6"/>'
+  reset: '<path d="M4 12a8 8 0 1 1 2.4 5.7"/><path d="M4 19v-6h6"/>',
+  meal: '<path d="M7 3v6a2 2 0 0 0 4 0V3"/><path d="M9 11v10"/><path d="M17.5 3c1.6 1.6 1.8 4.2.8 6.2-.5 1-1.3 1.4-1.3 2.3V21"/>',
+  habit: '<circle cx="12" cy="12" r="9"/><path d="M8 12.4l2.7 2.7L16 9.8"/>',
+  scale: '<rect x="3" y="6" width="18" height="15" rx="3"/><path d="M12 10.5v2.5"/><path d="M8.6 10a5 5 0 0 1 6.8 0"/>'
 };
 
 export function icon(name, cls = '') {

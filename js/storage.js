@@ -9,7 +9,16 @@
  * Tuesday logs against Monday without touching Tuesday's real session.
  */
 
-const K = { settings: 'gym.v1.settings', sessions: 'gym.v1.sessions', prs: 'gym.v1.prs' };
+import { MEAL_PLAN, DEFAULT_HABITS, SCORE_WEIGHTS, TARGET_RANGE } from './data/plan.js';
+import { WEEK, dayFor, exercisesOf } from './data/workouts.js';
+
+const K = {
+  settings: 'gym.v1.settings',
+  sessions: 'gym.v1.sessions',
+  prs: 'gym.v1.prs',
+  weights: 'gym.v1.weights',   /* [{date, time, kg, kind, dayId}] */
+  days: 'gym.v1.days'          /* { "2026-08-19": { meals: {}, habits: {} } } */
+};
 
 const DEFAULTS = {
   name: 'Kaarthikeya',
@@ -20,7 +29,22 @@ const DEFAULTS = {
   defaultReps: 8,
   restSeconds: 90,
   autoRest: true,
-  showGhost: true
+  showGhost: true,
+
+  /* weight goal — startWeight is captured at the first weigh-in unless set */
+  startWeight: null,
+  targetWeight: TARGET_RANGE.default,
+  targetMin: TARGET_RANGE.min,
+  targetMax: TARGET_RANGE.max,
+
+  /* null means "use the shipped default", so an untouched plan tracks updates */
+  mealPlan: null,
+  dailyCalories: null,
+  dailyProtein: null,
+  habits: null,
+  scoreWeights: null,
+
+  hidePrivate: true
 };
 
 /* ---------- low level ---------- */
@@ -233,12 +257,465 @@ export function lifetimeStats() {
   return { workouts, sets, volume: Math.round(volume), lastDate };
 }
 
+
+/* ---------- resolved configuration ---------- */
+
+/** The meal plan in force: the user's edited copy, or the shipped default. */
+export function getMealPlan() {
+  const custom = getSettings().mealPlan;
+  return Array.isArray(custom) && custom.length ? custom : MEAL_PLAN;
+}
+
+export function getTargets() {
+  const s = getSettings();
+  const plan = getMealPlan();
+  return {
+    kcal: Number(s.dailyCalories) || plan.reduce((n, m) => n + (Number(m.kcal) || 0), 0),
+    protein: Number(s.dailyProtein) || plan.reduce((n, m) => n + (Number(m.protein) || 0), 0)
+  };
+}
+
+export function getHabits() {
+  const custom = getSettings().habits;
+  return Array.isArray(custom) ? custom : DEFAULT_HABITS;
+}
+
+export function saveHabits(list) { return saveSettings({ habits: list }); }
+
+export function getScoreWeights() {
+  return Object.assign({}, SCORE_WEIGHTS, getSettings().scoreWeights || {});
+}
+
+/* ---------- weight ---------- */
+
+const allWeights = () => read(K.weights, []);
+
+/**
+ * Record a weigh-in. `kind` is 'checkin' | 'checkout' | 'manual'.
+ * One entry per kind per day — re-recording corrects the earlier value rather
+ * than piling up duplicates.
+ */
+export function addWeight(kg, kind = 'manual', date = new Date(), dayId = null) {
+  const value = Number(kg);
+  if (!isFinite(value) || value <= 0) throw new Error('Weight must be a positive number.');
+  const list = allWeights();
+  const d = dateKey(date);
+  const entry = {
+    date: d,
+    time: `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`,
+    kg: Math.round(value * 10) / 10,
+    kind,
+    dayId: dayId || dayFor(date).id
+  };
+  const at = list.findIndex(e => e.date === d && e.kind === kind);
+  if (at >= 0) list[at] = entry; else list.push(entry);
+  list.sort((a, b) => (a.date === b.date ? a.time.localeCompare(b.time) : a.date.localeCompare(b.date)));
+  write(K.weights, list);
+
+  /* the first weigh-in defines the start of the journey */
+  if (getSettings().startWeight == null) saveSettings({ startWeight: entry.kg });
+  return entry;
+}
+
+export const getWeights = () => allWeights();
+
+export function weightsOn(date = new Date()) {
+  const d = dateKey(date);
+  const out = {};
+  for (const e of allWeights()) if (e.date === d) out[e.kind] = e;
+  return out;
+}
+
+/** Most recent measurement of any kind. */
+export function latestWeight() {
+  const list = allWeights();
+  return list.length ? list[list.length - 1] : null;
+}
+
+/** One representative value per day (the last measurement of that day). */
+export function dailyWeights() {
+  const byDay = new Map();
+  for (const e of allWeights()) byDay.set(e.date, e);
+  return [...byDay.values()];
+}
+
+/** Centred moving average — the trend line, which is what actually matters. */
+export function movingAverage(series, window = 7) {
+  return series.map((point, i) => {
+    const from = Math.max(0, i - Math.floor(window / 2));
+    const to = Math.min(series.length, from + window);
+    const slice = series.slice(from, to);
+    const avg = slice.reduce((n, p) => n + p.kg, 0) / slice.length;
+    return { ...point, kg: Math.round(avg * 100) / 100 };
+  });
+}
+
+const RANGE_DAYS = { '7D': 7, '30D': 30, '3M': 90, '6M': 182, '1Y': 365, 'ALL': Infinity };
+
+export function weightSeries(range = '30D') {
+  const days = RANGE_DAYS[range] ?? 30;
+  const all = dailyWeights();
+  if (days === Infinity) return all;
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  const key = dateKey(cutoff);
+  return all.filter(e => e.date >= key);
+}
+
+export function weightStats(range = '30D') {
+  const series = weightSeries(range);
+  if (!series.length) return null;
+  const values = series.map(e => e.kg);
+  const trend = movingAverage(series);
+  const change = series.length > 1 ? series[series.length - 1].kg - series[0].kg : 0;
+  return {
+    current: values[values.length - 1],
+    highest: Math.max(...values),
+    lowest: Math.min(...values),
+    average: Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 10) / 10,
+    change: Math.round(change * 10) / 10,
+    trend,
+    count: series.length
+  };
+}
+
+/** Progress from the starting weight toward the target. Never negative. */
+export function weightGoal() {
+  const s = getSettings();
+  const latest = latestWeight();
+  const current = latest ? latest.kg : null;
+  const start = s.startWeight ?? current;
+  const target = Number(s.targetWeight) || TARGET_RANGE.default;
+  if (current == null || start == null) {
+    return { current: null, start: null, target, remaining: null, pct: 0 };
+  }
+  const remaining = Math.max(0, Math.round((current - target) * 10) / 10);
+  const span = start - target;
+  const pct = span <= 0 ? 100 : Math.max(0, Math.min(100, Math.round(((start - current) / span) * 100)));
+  return { current, start, target, remaining, pct, lost: Math.round((start - current) * 10) / 10 };
+}
+
+/* ---------- day log: meals and habits ---------- */
+
+const allDays = () => read(K.days, {});
+
+export function getDayLog(date = new Date()) {
+  const d = typeof date === 'string' ? date : dateKey(date);
+  const log = allDays()[d];
+  return { meals: {}, habits: {}, ...(log || {}) };
+}
+
+function saveDayLog(dateStr, log) {
+  const all = allDays();
+  all[dateStr] = log;
+  write(K.days, all);
+}
+
+export function setMeal(mealId, done, date = new Date()) {
+  const d = typeof date === 'string' ? date : dateKey(date);
+  const log = getDayLog(d);
+  log.meals[mealId] = !!done;
+  saveDayLog(d, log);
+  return log;
+}
+
+/** Record a habit for a day. Recording *is* the tracked state. */
+export function setHabit(habitId, data, date = new Date()) {
+  const d = typeof date === 'string' ? date : dateKey(date);
+  const log = getDayLog(d);
+  log.habits[habitId] = { tracked: true, ...(log.habits[habitId] || {}), ...data };
+  saveDayLog(d, log);
+  return log;
+}
+
+export function clearHabit(habitId, date = new Date()) {
+  const d = typeof date === 'string' ? date : dateKey(date);
+  const log = getDayLog(d);
+  delete log.habits[habitId];
+  saveDayLog(d, log);
+  return log;
+}
+
+/** Did this entry meet the habit's own aim? Used only for adherence, never scoring. */
+export function habitMetAim(habit, entry) {
+  if (!entry || !entry.tracked) return false;
+  if (habit.lowerIsBetter) {
+    return habit.type === 'yesno' ? entry.value === false : Number(entry.value || 0) === 0;
+  }
+  if (habit.type === 'yesno') return entry.value === true;
+  return Number(entry.value || 0) >= Number(habit.target || 0);
+}
+
+/** Consecutive-day runs, both for recording and for meeting the aim. */
+export function habitStreaks(habitId) {
+  const habit = getHabits().find(h => h.id === habitId);
+  if (!habit) return { trackCurrent: 0, trackLongest: 0, aimCurrent: 0, aimLongest: 0 };
+  const days = allDays();
+  const keys = Object.keys(days).sort();
+  if (!keys.length) return { trackCurrent: 0, trackLongest: 0, aimCurrent: 0, aimLongest: 0 };
+
+  let trackLongest = 0, aimLongest = 0, tRun = 0, aRun = 0;
+  let cursor = new Date(keys[0] + 'T00:00:00');
+  const today = new Date();
+  const runsTrack = [], runsAim = [];
+
+  while (dateKey(cursor) <= dateKey(today)) {
+    const entry = days[dateKey(cursor)]?.habits?.[habitId];
+    if (entry?.tracked) { tRun++; trackLongest = Math.max(trackLongest, tRun); }
+    else { runsTrack.push(tRun); tRun = 0; }
+    if (habitMetAim(habit, entry)) { aRun++; aimLongest = Math.max(aimLongest, aRun); }
+    else { runsAim.push(aRun); aRun = 0; }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return { trackCurrent: tRun, trackLongest, aimCurrent: aRun, aimLongest };
+}
+
+/** Totals for a count habit (cigarettes today / this week / this month / average). */
+export function habitTotals(habitId, date = new Date()) {
+  const days = allDays();
+  const today = dateKey(date);
+  const weekFrom = dateKey(weekStart(date));
+  const monthFrom = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
+  let day = 0, week = 0, month = 0, tracked = 0, total = 0;
+
+  for (const [d, log] of Object.entries(days)) {
+    const entry = log.habits?.[habitId];
+    if (!entry?.tracked) continue;
+    const n = Number(entry.value) || 0;
+    tracked++; total += n;
+    if (d === today) day += n;
+    if (d >= weekFrom) week += n;
+    if (d >= monthFrom) month += n;
+  }
+  return { day, week, month, average: tracked ? Math.round((total / tracked) * 10) / 10 : 0, trackedDays: tracked };
+}
+
+/* ---------- daily progress score ---------- */
+
+/**
+ * Four independent components, deliberately kept separate.
+ *
+ * The weight component measures whether a measurement was *recorded*, never
+ * whether the number went down — a heavier reading must never reduce a score.
+ * On rest days the workout component does not apply and its share is
+ * redistributed across the rest.
+ */
+export function dailyBreakdown(date = new Date()) {
+  const d = typeof date === 'string' ? date : dateKey(date);
+  const dateObj = typeof date === 'string' ? new Date(d + 'T12:00:00') : date;
+  const day = dayFor(dateObj);
+  const log = getDayLog(d);
+  const plan = getMealPlan();
+  const habits = getHabits();
+
+  /* workout */
+  const ids = exercisesOf(day);
+  const session = allSessions()[`${d}|${day.id}`];
+  const doneEx = ids.filter(id => session?.ex?.[id]?.done).length;
+  const workout = {
+    applicable: !day.rest,
+    done: doneEx,
+    total: ids.length,
+    value: ids.length ? doneEx / ids.length : 0
+  };
+
+  /* nutrition */
+  const mealsDone = plan.filter(m => log.meals[m.id]).length;
+  const nutrition = {
+    done: mealsDone,
+    total: plan.length,
+    value: plan.length ? mealsDone / plan.length : 0,
+    kcal: plan.reduce((n, m) => n + (log.meals[m.id] ? (Number(m.kcal) || 0) : 0), 0),
+    protein: plan.reduce((n, m) => n + (log.meals[m.id] ? (Number(m.protein) || 0) : 0), 0)
+  };
+
+  /* habits — recording is what counts */
+  const trackedCount = habits.filter(h => log.habits[h.id]?.tracked).length;
+  const habitsPart = {
+    done: trackedCount,
+    total: habits.length,
+    value: habits.length ? trackedCount / habits.length : 0,
+    metAim: habits.filter(h => habitMetAim(h, log.habits[h.id])).length
+  };
+
+  /* weight: consistency of recording */
+  const w = weightsOn(dateObj);
+  const weight = day.rest
+    ? { applicable: true, value: (w.checkin || w.checkout || w.manual) ? 1 : 0, checkIn: w.checkin?.kg ?? null, checkOut: w.checkout?.kg ?? null, expected: 1 }
+    : {
+        applicable: true,
+        value: ((w.checkin ? 0.5 : 0) + (w.checkout ? 0.5 : 0)) || (w.manual ? 0.5 : 0),
+        checkIn: w.checkin?.kg ?? null,
+        checkOut: w.checkout?.kg ?? null,
+        expected: 2
+      };
+
+  /* weighted total, renormalised when a component does not apply */
+  const weights = getScoreWeights();
+  const parts = [
+    ['workout', workout.value, workout.applicable],
+    ['nutrition', nutrition.value, true],
+    ['habits', habitsPart.value, habitsPart.total > 0],
+    ['weight', weight.value, true]
+  ];
+  const totalWeight = parts.reduce((n, [k, , ok]) => n + (ok ? (weights[k] || 0) : 0), 0);
+  const score = totalWeight
+    ? Math.round(parts.reduce((n, [k, v, ok]) => n + (ok ? v * (weights[k] || 0) : 0), 0) / totalWeight * 100)
+    : 0;
+
+  return { date: d, day, score, workout, nutrition, habits: habitsPart, weight };
+}
+
+/* ---------- period aggregation ---------- */
+
+/** Did this day record anything at all? Used to keep averages honest. */
+function hasActivity(b) {
+  return b.workout.done > 0 || b.nutrition.done > 0 || b.habits.done > 0 || b.weight.value > 0;
+}
+
+function eachDay(from, to) {
+  const out = [];
+  const cursor = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  while (cursor <= to) {
+    out.push(new Date(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return out;
+}
+
+/** Per-day breakdowns for the week containing `date` (Monday first). */
+export function weekBreakdown(date = new Date()) {
+  const start = weekStart(date);
+  const end = new Date(start); end.setDate(end.getDate() + 6);
+  const today = dateKey();
+  const days = eachDay(start, end).map(d => {
+    const b = dailyBreakdown(d);
+    return { ...b, future: b.date > today, isToday: b.date === today };
+  });
+  const counted = days.filter(d => !d.future);
+  return {
+    days,
+    score: counted.length ? Math.round(counted.reduce((n, d) => n + d.score, 0) / counted.length) : 0,
+    workouts: {
+      done: counted.filter(d => d.workout.applicable && d.workout.value >= 1).length,
+      total: counted.filter(d => d.workout.applicable).length
+    },
+    meals: {
+      done: counted.reduce((n, d) => n + d.nutrition.done, 0),
+      total: counted.reduce((n, d) => n + d.nutrition.total, 0)
+    },
+    weighIns: {
+      done: counted.reduce((n, d) => n + (d.weight.checkIn ? 1 : 0) + (d.weight.checkOut ? 1 : 0), 0),
+      total: counted.reduce((n, d) => n + d.weight.expected, 0)
+    },
+    habitAdherence: (() => {
+      const tot = counted.reduce((n, d) => n + d.habits.total, 0);
+      const met = counted.reduce((n, d) => n + d.habits.metAim, 0);
+      return tot ? Math.round((met / tot) * 100) : 0;
+    })()
+  };
+}
+
+/** Per-day breakdowns for the calendar month containing `date`. */
+export function monthBreakdown(date = new Date()) {
+  const start = new Date(date.getFullYear(), date.getMonth(), 1);
+  const end = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+  const today = dateKey();
+  const days = eachDay(start, end).map(d => {
+    const b = dailyBreakdown(d);
+    return { ...b, future: b.date > today };
+  });
+  const counted = days.filter(d => !d.future && hasActivity(d));
+  const avg = (pick) => counted.length
+    ? Math.round(counted.reduce((n, d) => n + pick(d), 0) / counted.length * 100) : 0;
+  return {
+    days,
+    monthStart: start,
+    score: counted.length ? Math.round(counted.reduce((n, d) => n + d.score, 0) / counted.length) : 0,
+    workoutConsistency: (() => {
+      const applicable = counted.filter(d => d.workout.applicable);
+      return applicable.length
+        ? Math.round(applicable.filter(d => d.workout.value >= 1).length / applicable.length * 100) : 0;
+    })(),
+    nutritionConsistency: avg(d => d.nutrition.value),
+    habitConsistency: avg(d => d.habits.value),
+    weightConsistency: avg(d => d.weight.value)
+  };
+}
+
+/** Month-by-month rollup for a year, plus the headline totals. */
+export function yearBreakdown(year = new Date().getFullYear()) {
+  const today = dateKey();
+  const months = [];
+  let workouts = 0, meals = 0, habitMet = 0, habitTotal = 0, scored = 0, scoreSum = 0;
+
+  for (let m = 0; m < 12; m++) {
+    const start = new Date(year, m, 1);
+    const end = new Date(year, m + 1, 0);
+    const days = eachDay(start, end)
+      .map(d => dailyBreakdown(d))
+      .filter(b => b.date <= today);
+    /* Averaging across months before tracking began would report a misleadingly
+       low year — only days with something recorded count toward the averages. */
+    const counted = days.filter(hasActivity);
+    workouts += days.filter(b => b.workout.applicable && b.workout.value >= 1).length;
+    meals += days.reduce((n, b) => n + b.nutrition.done, 0);
+    for (const b of days) {
+      if (!b.habits.done) continue;          /* nothing tracked that day */
+      habitMet += b.habits.metAim;
+      habitTotal += b.habits.total;
+    }
+    scoreSum += counted.reduce((n, b) => n + b.score, 0);
+    scored += counted.length;
+    months.push({
+      month: m,
+      label: start.toLocaleDateString(undefined, { month: 'short' }).toUpperCase(),
+      score: counted.length ? Math.round(counted.reduce((n, b) => n + b.score, 0) / counted.length) : 0,
+      active: counted.length
+    });
+  }
+
+  const weights = dailyWeights().filter(e => e.date.startsWith(String(year)));
+  return {
+    year, months,
+    score: scored ? Math.round(scoreSum / scored) : 0,
+    workouts, meals,
+    habitAdherence: habitTotal ? Math.round((habitMet / habitTotal) * 100) : 0,
+    weightChange: weights.length > 1
+      ? Math.round((weights[weights.length - 1].kg - weights[0].kg) * 10) / 10 : null,
+    bestWorkoutStreak: bestStreak(b => b.workout.applicable ? b.workout.value >= 1 : null),
+    bestHabitStreak: bestStreak(b => b.habits.total ? b.habits.value >= 1 : null)
+  };
+}
+
+/** Longest run of days satisfying `pick`; null from pick skips the day (rest days). */
+function bestStreak(pick) {
+  const days = Object.keys(allDays()).concat(Object.keys(allSessions()).map(k => k.split('|')[0]));
+  const keys = [...new Set(days)].sort();
+  if (!keys.length) return 0;
+  let best = 0, run = 0;
+  const cursor = new Date(keys[0] + 'T00:00:00');
+  const today = new Date();
+  while (dateKey(cursor) <= dateKey(today)) {
+    const verdict = pick(dailyBreakdown(new Date(cursor)));
+    if (verdict === null) { /* not applicable — the run carries over */ }
+    else if (verdict) { run++; best = Math.max(best, run); }
+    else run = 0;
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return best;
+}
+
 /* ---------- data management ---------- */
 
 export function exportData() {
   return JSON.stringify({
-    version: 1, exportedAt: new Date().toISOString(),
-    settings: getSettings(), sessions: allSessions(), prs: allPRs()
+    version: 2, exportedAt: new Date().toISOString(),
+    settings: getSettings(),
+    sessions: allSessions(),
+    prs: allPRs(),
+    weights: allWeights(),
+    days: allDays()
   }, null, 2);
 }
 
@@ -248,11 +725,25 @@ export function importData(json) {
   if (data.settings) write(K.settings, data.settings);
   if (data.sessions) write(K.sessions, data.sessions);
   if (data.prs) write(K.prs, data.prs);
+  if (data.weights) write(K.weights, data.weights);
+  if (data.days) write(K.days, data.days);
   return true;
 }
 
+/** Scoped reset: 'workout' | 'weight' | 'habits' | 'nutrition' | 'all'. */
 export function clearAll(what = 'all') {
-  if (what === 'all' || what === 'sessions') write(K.sessions, {});
-  if (what === 'all' || what === 'prs') write(K.prs, {});
-  if (what === 'all') write(K.settings, {});
+  if (what === 'all' || what === 'workout' || what === 'sessions') { write(K.sessions, {}); write(K.prs, {}); }
+  if (what === 'prs') write(K.prs, {});
+  if (what === 'all' || what === 'weight') write(K.weights, []);
+
+  if (what === 'habits' || what === 'nutrition') {
+    /* these two share the day log, so clear only the half being reset */
+    const all = allDays();
+    for (const log of Object.values(all)) {
+      if (what === 'habits') log.habits = {};
+      if (what === 'nutrition') log.meals = {};
+    }
+    write(K.days, all);
+  }
+  if (what === 'all') { write(K.days, {}); write(K.settings, {}); }
 }

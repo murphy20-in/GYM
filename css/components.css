@@ -11,8 +11,11 @@
 
 .card-tight { padding: 12px 14px; }
 
-.stack { display: grid; gap: 12px; }
-.stack-lg { display: grid; gap: 20px; }
+/* minmax(0,1fr): grid items default to min-width:auto, so one wide child (the
+   scrollable day strip, a chart, a chip row) would otherwise stretch the whole
+   column past the viewport instead of scrolling inside its own box. */
+.stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.stack-lg { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
 .row { display: flex; align-items: center; gap: 10px; }
 .row-between { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .grow { flex: 1; min-width: 0; }

@@ -9,6 +9,7 @@ import { getDay, dayFor, exercisesOf, nextTrainingDay } from '../data/workouts.j
 import { getExercise } from '../data/exercises.js';
 import * as store from '../storage.js';
 import { setGrid, completeButton } from './setgrid.js';
+import { weighInSheet, sessionWeightNote } from './weighin.js';
 
 export function view(params, app) {
   const day = getDay(params.id) || dayFor();
@@ -50,18 +51,40 @@ export function view(params, app) {
       .reduce((sum, s) => sum + (Number(s.weight) || 0) * (Number(s.reps) || 0), 0);
     const units = store.getSettings().units;
 
+    const w = store.weightsOn();
+    const adherence = prog.total ? Math.round((prog.done / prog.total) * 100) : 0;
+
     return el('section', { class: 'card finish-card' }, [
       el('div', { class: 'tick', html: icon('check') }),
       el('h2', { style: 'font-size:24px', text: 'WORKOUT COMPLETE' }),
       el('p', { class: 'muted', style: 'margin-top:6px', text: `${day.name} · ${day.title}` }),
       el('p', { class: 'dim', style: 'margin-top:4px', text: `${prog.done} / ${prog.total} exercises completed` }),
+
       el('div', { class: 'finish-stats' }, [
         el('div', {}, [el('b', { text: mins ? `${mins}` : '—' }), el('span', { text: 'Minutes' })]),
         el('div', {}, [el('b', { text: String(sets) }), el('span', { text: 'Sets' })]),
+        el('div', {}, [el('b', { text: `${adherence}%` }), el('span', { text: 'Adherence' })])
+      ]),
+      el('div', { class: 'finish-stats', style: 'margin-top:10px' }, [
+        el('div', {}, [el('b', { text: w.checkin ? `${w.checkin.kg}` : '—' }), el('span', { text: `Check-in ${units}` })]),
+        el('div', {}, [el('b', { text: w.checkout ? `${w.checkout.kg}` : '—' }), el('span', { text: `Check-out ${units}` })]),
         el('div', {}, [el('b', { text: volume ? `${Math.round(volume)}` : '—' }), el('span', { text: `Volume ${units}` })])
       ]),
+
+      /* the difference is shown only with its caveat attached */
+      sessionWeightNote(w.checkin?.kg ?? null, w.checkout?.kg ?? null),
+
       el('div', { class: 'stack', style: 'margin-top:20px' }, [
-        el('a', { class: 'btn btn-primary btn-lg btn-block', href: '#/progress', text: 'VIEW PROGRESS' }),
+        !w.checkout ? el('button', {
+          class: 'btn btn-primary btn-lg btn-block', type: 'button',
+          html: `${icon('timer')}<span>GYM CHECK-OUT</span>`,
+          onclick: () => weighInSheet('checkout', { dayId: day.id, onSaved: paint })
+        }) : null,
+        el('a', {
+          class: `btn btn-lg btn-block ${w.checkout ? 'btn-primary' : ''}`.trim(),
+          href: '#/', text: 'DAILY SUMMARY'
+        }),
+        el('a', { class: 'btn btn-ghost btn-block', href: '#/progress', text: 'View progress' }),
         el('button', {
           class: 'btn btn-ghost btn-block', type: 'button', text: 'Back to exercises',
           onclick: () => { index = 0; paint(); }
@@ -88,6 +111,22 @@ export function view(params, app) {
     if (allDone) {
       container.appendChild(finishScreen());
       return;
+    }
+
+    /* Check-in comes first in the real gym flow, but it never blocks training. */
+    if (!store.weightsOn().checkin) {
+      container.appendChild(el('section', { class: 'card accent-weight checkin-prompt' }, [
+        el('div', { class: 'row-between' }, [
+          el('div', { class: 'grow' }, [
+            el('p', { class: 'eyebrow', text: 'Gym check-in' }),
+            el('p', { class: 'dim', style: 'font-size:12.5px;margin-top:2px', text: 'Log your weight before you start.' })
+          ]),
+          el('button', {
+            class: 'btn btn-primary', type: 'button', text: 'WEIGH IN',
+            onclick: () => weighInSheet('checkin', { dayId: day.id, onSaved: paint })
+          })
+        ])
+      ]));
     }
 
     figure = exerciseFigure(ex, { period: 3400 });

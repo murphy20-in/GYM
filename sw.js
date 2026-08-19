@@ -5,7 +5,7 @@
  * needs the network again.
  */
 
-const VERSION = 'gym-v1';
+const VERSION = 'gym-v2';
 const ASSETS = [
   './',
   './index.html',
@@ -13,16 +13,24 @@ const ASSETS = [
   './css/base.css',
   './css/components.css',
   './css/views.css',
+  './css/tracking.css',
   './js/app.js',
   './js/ui.js',
   './js/figure.js',
   './js/muscles.js',
   './js/storage.js',
   './js/timer.js',
+  './js/chart.js',
   './js/data/archetypes.js',
+  './js/data/plan.js',
   './js/data/exercises.js',
   './js/data/workouts.js',
-  './js/views/home.js',
+  './js/views/dashboard.js',
+  './js/views/daystrip.js',
+  './js/views/weight.js',
+  './js/views/weighin.js',
+  './js/views/nutrition.js',
+  './js/views/habits.js',
   './js/views/workouts.js',
   './js/views/workoutMode.js',
   './js/views/detail.js',

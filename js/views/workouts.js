@@ -3,7 +3,7 @@
 import { el, icon, exerciseCard } from '../ui.js';
 import { WEEK, getDay, dayFor, exercisesOf, shiftDay } from '../data/workouts.js';
 import { getExercise } from '../data/exercises.js';
-import { dayStrip } from './home.js';
+import { dayStrip } from './daystrip.js';
 import * as store from '../storage.js';
 
 /* ---------- week overview ---------- */

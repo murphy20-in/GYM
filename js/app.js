@@ -7,25 +7,35 @@
 
 import { el, icon } from './ui.js';
 import { mountTimerFab } from './timer.js';
-import * as home from './views/home.js';
+import * as dashboard from './views/dashboard.js';
 import * as workouts from './views/workouts.js';
+import * as weight from './views/weight.js';
+import * as nutrition from './views/nutrition.js';
+import * as habits from './views/habits.js';
 import * as workoutMode from './views/workoutMode.js';
 import * as detail from './views/detail.js';
 import * as library from './views/library.js';
 import * as progress from './views/progress.js';
 import * as settings from './views/settings.js';
 
+/* Five destinations only: six or more shrinks each target below a comfortable
+   thumb width at 360px. The exercise library and settings live in the top bar,
+   which is present on every screen. */
 const NAV = [
-  { href: '#/', label: 'Home', icon: 'home', match: p => p === '/' || p.startsWith('/home') },
-  { href: '#/workouts', label: 'Workout', icon: 'dumbbell', match: p => p.startsWith('/workout') || p.startsWith('/day') },
-  { href: '#/library', label: 'Exercises', icon: 'book', match: p => p.startsWith('/library') || p.startsWith('/exercise') },
-  { href: '#/progress', label: 'Progress', icon: 'chart', match: p => p.startsWith('/progress') },
-  { href: '#/settings', label: 'Settings', icon: 'gear', match: p => p.startsWith('/settings') }
+  { href: '#/', label: 'Today', icon: 'home', match: p => p === '/' || p.startsWith('/weight') },
+  { href: '#/workouts', label: 'Workout', icon: 'dumbbell', match: p => p.startsWith('/workout') || p.startsWith('/day') || p.startsWith('/library') || p.startsWith('/exercise') },
+  { href: '#/nutrition', label: 'Nutrition', icon: 'meal', match: p => p.startsWith('/nutrition') },
+  { href: '#/habits', label: 'Habits', icon: 'habit', match: p => p.startsWith('/habits') },
+  { href: '#/progress', label: 'Progress', icon: 'chart', match: p => p.startsWith('/progress') }
 ];
 
 const ROUTES = [
-  { re: /^\/$/, view: home.view, params: () => ({}) },
-  { re: /^\/home\/([\w-]+)$/, view: home.view, params: m => ({ day: m[1] }) },
+  { re: /^\/$/, view: dashboard.view, params: () => ({}) },
+  /* older links pointed at #/home/:day before the dashboard replaced it */
+  { re: /^\/home\/([\w-]+)$/, redirect: m => `#/day/${m[1]}` },
+  { re: /^\/weight$/, view: weight.view, params: () => ({}) },
+  { re: /^\/nutrition$/, view: nutrition.view, params: () => ({}) },
+  { re: /^\/habits$/, view: habits.view, params: () => ({}) },
   { re: /^\/workouts$/, view: workouts.weekView, params: () => ({}) },
   { re: /^\/day\/([\w-]+)$/, view: workouts.view, params: m => ({ id: m[1] }) },
   { re: /^\/workout\/([\w-]+)$/, view: workoutMode.view, params: m => ({ id: m[1] }) },
@@ -66,6 +76,8 @@ function updateNav() {
 function render() {
   const { path, query } = parseHash();
   const route = ROUTES.find(r => r.re.test(path));
+
+  if (route?.redirect) { location.replace(route.redirect(path.match(route.re))); return; }
 
   current?.destroy?.();
   current = null;
@@ -124,7 +136,11 @@ function buildShell() {
 
   const bar = el('header', { class: 'topbar' }, [
     backEl,
-    el('div', { class: 'grow' }, [eyebrowEl, titleEl])
+    el('div', { class: 'grow' }, [eyebrowEl, titleEl]),
+    el('div', { class: 'topbar-actions' }, [
+      el('a', { class: 'btn btn-icon', href: '#/library', 'aria-label': 'Exercise library', html: icon('search') }),
+      el('a', { class: 'btn btn-icon', href: '#/settings', 'aria-label': 'Settings', html: icon('gear') })
+    ])
   ]);
 
   document.body.appendChild(el('div', { class: 'app' }, [

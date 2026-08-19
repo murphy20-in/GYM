@@ -1,6 +1,7 @@
-/* settings.js — personalisation and local data management. */
+/* settings.js — personalisation, plan editing and local data management. */
 
-import { el, toast, sheet } from '../ui.js';
+import { el, toast, sheet, icon } from '../ui.js';
+import { MEAL_PLAN, DEFAULT_HABITS, TARGET_RANGE, SCORE_WEIGHTS } from '../data/plan.js';
 import * as store from '../storage.js';
 
 const GOALS = ['Muscle Gain', 'Strength', 'Fat Loss', 'General Fitness'];
@@ -17,6 +18,8 @@ const GOAL_GUIDANCE = {
 
 export const goalGuidance = () => GOAL_GUIDANCE[store.getSettings().goal] || GOAL_GUIDANCE['Muscle Gain'];
 
+/* ---------- small controls ---------- */
+
 function row(label, hint, control) {
   return el('label', { class: 'setting-row' }, [
     el('div', {}, [el('div', { class: 'lbl', text: label }), hint && el('div', { class: 'hint', text: hint })]),
@@ -27,7 +30,7 @@ function row(label, hint, control) {
 function segmented(options, value, onPick, labelFor = String) {
   const wrap = el('div', { class: 'seg', role: 'group' },
     options.map(o => el('button', {
-      class: '', type: 'button', dataset: { v: String(o) },
+      type: 'button', dataset: { v: String(o) },
       'aria-pressed': String(o === value), text: labelFor(o),
       onclick: () => {
         for (const b of wrap.children) b.setAttribute('aria-pressed', String(b.dataset.v === String(o)));
@@ -37,9 +40,11 @@ function segmented(options, value, onPick, labelFor = String) {
   return wrap;
 }
 
-function stepper(value, min, max, step, onChange, format = String) {
-  const input = el('input', { type: 'number', value: String(value), min: String(min), max: String(max), step: String(step), 'aria-label': 'value' });
-  const clamp = v => Math.max(min, Math.min(max, v));
+function stepper(value, min, max, step, onChange) {
+  const input = el('input', {
+    type: 'number', value: String(value), min: String(min), max: String(max), step: String(step), 'aria-label': 'value'
+  });
+  const clamp = v => Math.max(min, Math.min(max, Math.round(v * 100) / 100));
   const set = v => { input.value = String(clamp(v)); onChange(clamp(v)); };
   input.addEventListener('change', () => set(Number(input.value) || min));
   return el('div', { class: 'stepper', style: 'width:150px' }, [
@@ -49,107 +54,9 @@ function stepper(value, min, max, step, onChange, format = String) {
   ]);
 }
 
-export function view(params, app) {
-  const s = store.getSettings();
-  const guidance = el('p', { class: 'dim', style: 'font-size:12.5px' });
-
-  function paintGuidance() {
-    const g = goalGuidance();
-    guidance.textContent = `${g.reps} · ${g.rest} — ${g.note}`;
-  }
-  paintGuidance();
-
-  const nameInput = el('input', {
-    class: 'input', type: 'text', value: s.name, style: 'width:170px',
-    'aria-label': 'Your name', maxlength: '24',
-    onchange: e => { store.saveSettings({ name: e.target.value.trim() }); toast('Saved'); app.refreshChrome?.(); }
-  });
-
-  const profile = el('section', { class: 'card' }, [
-    el('h3', { class: 'eyebrow', style: 'margin-bottom:4px', text: 'Profile' }),
-    row('Name', 'Shown on the home screen', nameInput),
-    row('Primary goal', 'Adjusts rep and rest suggestions only',
-      el('select', {
-        class: 'input', style: 'width:170px', 'aria-label': 'Primary goal',
-        onchange: e => { store.saveSettings({ goal: e.target.value }); paintGuidance(); toast('Goal updated'); }
-      }, GOALS.map(g => el('option', { value: g, text: g, selected: g === s.goal })))),
-    row('Training experience', 'For your own reference',
-      el('select', {
-        class: 'input', style: 'width:170px', 'aria-label': 'Training experience',
-        onchange: e => store.saveSettings({ experience: e.target.value })
-      }, LEVELS.map(l => el('option', { value: l, text: l, selected: l === s.experience })))),
-    el('div', { style: 'padding-top:10px' }, [guidance])
-  ]);
-
-  const training = el('section', { class: 'card' }, [
-    el('h3', { class: 'eyebrow', style: 'margin-bottom:4px', text: 'Training defaults' }),
-    row('Units', 'Used for every weight field',
-      segmented(['kg', 'lb'], s.units, v => { store.saveSettings({ units: v }); toast(`Units: ${v}`); })),
-    row('Default sets', 'Rows shown in the set logger',
-      stepper(s.defaultSets, 1, 8, 1, v => store.saveSettings({ defaultSets: v }))),
-    row('Default reps', 'Placeholder in the reps field',
-      stepper(s.defaultReps, 1, 30, 1, v => store.saveSettings({ defaultReps: v }))),
-    row('Rest timer', 'Length of one rest period',
-      stepper(s.restSeconds, 15, 600, 15, v => store.saveSettings({ restSeconds: v }))),
-    row('Auto-start rest', 'Start the timer when a set is ticked',
-      toggle(s.autoRest, v => store.saveSettings({ autoRest: v })))
-  ]);
-
-  /* ---- data ---- */
-  const fileInput = el('input', { type: 'file', accept: 'application/json', class: 'sr-only' });
-  fileInput.addEventListener('change', async () => {
-    const file = fileInput.files?.[0];
-    if (!file) return;
-    try {
-      store.importData(await file.text());
-      toast('Data restored');
-      app.go('#/progress');
-    } catch (err) {
-      toast('Could not read that file', 'close');
-    }
-    fileInput.value = '';
-  });
-
-  const data = el('section', { class: 'card stack' }, [
-    el('h3', { class: 'eyebrow', text: 'Your data' }),
-    el('p', { class: 'dim', style: 'font-size:12.5px',
-      text: 'Everything is stored on this device in your browser. Nothing is uploaded, and clearing your browser data removes it.' }),
-    el('button', { class: 'btn btn-block', type: 'button', text: 'Export backup (.json)', onclick: exportBackup }),
-    el('button', { class: 'btn btn-block', type: 'button', text: 'Restore from backup', onclick: () => fileInput.click() }),
-    fileInput,
-    el('button', {
-      class: 'btn btn-block btn-danger', type: 'button', text: 'Reset workout history',
-      onclick: () => confirmSheet('Reset workout history?',
-        'Completed sets, weights and personal records will be deleted from this device. Settings are kept.',
-        () => { store.clearAll('sessions'); store.clearAll('prs'); toast('History cleared', 'reset'); app.go('#/progress'); })
-    }),
-    el('button', {
-      class: 'btn btn-block btn-danger', type: 'button', text: 'Erase everything',
-      onclick: () => confirmSheet('Erase all app data?',
-        'Settings, history and records will all be deleted from this device. This cannot be undone.',
-        () => { store.clearAll('all'); toast('All data erased', 'reset'); app.go('#/'); })
-    })
-  ]);
-
-  const about = el('section', { class: 'card' }, [
-    el('h3', { class: 'eyebrow', style: 'margin-bottom:8px', text: 'About' }),
-    el('p', { class: 'muted', style: 'font-size:14px',
-      text: 'A personal workout companion: 57 exercises, animated form visuals, and offline tracking. Add it to your home screen to use it like an app.' }),
-    el('p', { class: 'dim', style: 'font-size:12.5px;margin-top:10px',
-      text: 'General training guidance only — not medical advice. Stop if a movement causes sharp or unusual pain.' })
-  ]);
-
-  return {
-    title: 'Settings',
-    eyebrow: 'Preferences',
-    node: el('div', { class: 'view stack-lg' }, [profile, training, data, about])
-  };
-}
-
 function toggle(value, onChange) {
   const btn = el('button', {
-    class: 'switch', type: 'button', role: 'switch', 'aria-checked': String(value),
-    'aria-label': 'Toggle',
+    class: 'switch', type: 'button', role: 'switch', 'aria-checked': String(value), 'aria-label': 'Toggle',
     onclick: () => {
       const next = btn.getAttribute('aria-checked') !== 'true';
       btn.setAttribute('aria-checked', String(next));
@@ -159,10 +66,265 @@ function toggle(value, onChange) {
   return btn;
 }
 
+/* ---------- view ---------- */
+
+export function view(params, app) {
+  const container = el('div', { class: 'view stack-lg' });
+
+  function paint() {
+    const s = store.getSettings();
+    const goal = store.weightGoal();
+    container.replaceChildren();
+
+    /* ---- profile ---- */
+    const guidance = el('p', { class: 'dim', style: 'font-size:12.5px' });
+    const paintGuidance = () => {
+      const g = goalGuidance();
+      guidance.textContent = `${g.reps} · ${g.rest} — ${g.note}`;
+    };
+    paintGuidance();
+
+    container.appendChild(el('section', { class: 'card' }, [
+      el('h3', { class: 'eyebrow', style: 'margin-bottom:4px', text: 'Profile' }),
+      row('Name', 'Shown on the home screen', el('input', {
+        class: 'input', type: 'text', value: s.name, style: 'width:170px', maxlength: '24', 'aria-label': 'Your name',
+        onchange: e => { store.saveSettings({ name: e.target.value.trim() }); toast('Saved'); }
+      })),
+      row('Primary goal', 'Adjusts rep and rest suggestions only', el('select', {
+        class: 'input', style: 'width:170px', 'aria-label': 'Primary goal',
+        onchange: e => { store.saveSettings({ goal: e.target.value }); paintGuidance(); toast('Goal updated'); }
+      }, GOALS.map(g => el('option', { value: g, text: g, selected: g === s.goal })))),
+      row('Training experience', 'For your own reference', el('select', {
+        class: 'input', style: 'width:170px', 'aria-label': 'Training experience',
+        onchange: e => store.saveSettings({ experience: e.target.value })
+      }, LEVELS.map(l => el('option', { value: l, text: l, selected: l === s.experience })))),
+      row('Units', 'Used for every weight field',
+        segmented(['kg', 'lb'], s.units, v => { store.saveSettings({ units: v }); toast(`Units: ${v}`); paint(); })),
+      el('div', { style: 'padding-top:10px' }, [guidance])
+    ]));
+
+    /* ---- weight goal ---- */
+    container.appendChild(el('section', { class: 'card accent-weight' }, [
+      el('h3', { class: 'eyebrow', style: 'margin-bottom:4px', text: 'Weight goal' }),
+      row('Starting weight', goal.start ? `Journey began at ${goal.start} ${s.units}` : 'Set on your first weigh-in',
+        stepper(s.startWeight ?? goal.current ?? 90, 30, 300, 0.1, v => { store.saveSettings({ startWeight: v }); toast('Start weight saved'); })),
+      row('Target weight', `Must sit inside ${s.targetMin}–${s.targetMax} ${s.units}`,
+        stepper(s.targetWeight, s.targetMin, s.targetMax, 0.5, v => { store.saveSettings({ targetWeight: v }); toast(`Target ${v} ${s.units}`); })),
+      row('Range minimum', 'Low end of your acceptable range',
+        stepper(s.targetMin, 40, 200, 0.5, v => {
+          store.saveSettings({ targetMin: v, targetWeight: Math.max(v, s.targetWeight) });
+        })),
+      row('Range maximum', 'High end of your acceptable range',
+        stepper(s.targetMax, 40, 200, 0.5, v => {
+          store.saveSettings({ targetMax: v, targetWeight: Math.min(v, s.targetWeight) });
+        })),
+      el('p', { class: 'dim', style: 'font-size:12px;padding-top:10px;line-height:1.45',
+        text: 'A range rather than a single number: body weight moves around day to day, and anywhere inside the range is the goal met.' })
+    ]));
+
+    /* ---- nutrition ---- */
+    const plan = store.getMealPlan();
+    const targets = store.getTargets();
+    container.appendChild(el('section', { class: 'card accent-nutrition' }, [
+      el('h3', { class: 'eyebrow', style: 'margin-bottom:4px', text: 'Nutrition' }),
+      row('Daily calories', 'Leave blank to total the meal plan', el('input', {
+        class: 'input', type: 'number', style: 'width:120px', min: '800', max: '6000', step: '10',
+        value: s.dailyCalories ?? '', placeholder: String(targets.kcal), 'aria-label': 'Daily calorie target',
+        onchange: e => { store.saveSettings({ dailyCalories: e.target.value ? Number(e.target.value) : null }); toast('Saved'); paint(); }
+      })),
+      row('Daily protein (g)', 'Leave blank to total the meal plan', el('input', {
+        class: 'input', type: 'number', style: 'width:120px', min: '30', max: '400', step: '1',
+        value: s.dailyProtein ?? '', placeholder: String(targets.protein), 'aria-label': 'Daily protein target',
+        onchange: e => { store.saveSettings({ dailyProtein: e.target.value ? Number(e.target.value) : null }); toast('Saved'); paint(); }
+      })),
+      el('p', { class: 'eyebrow', style: 'margin:14px 0 8px', text: 'Meal plan' }),
+      ...plan.map(meal => el('button', {
+        class: 'plan-row', type: 'button', onclick: () => editMeal(meal),
+        'aria-label': `Edit ${meal.name}`
+      }, [
+        el('span', { class: 'grow' }, [
+          el('strong', { text: meal.name }),
+          el('span', { class: 'dim', style: 'display:block;font-size:12px',
+            text: `≈ ${meal.kcal} kcal · ≈ ${meal.protein} g · ${meal.items.length} items` })
+        ]),
+        el('span', { class: 'dim', html: icon('right') })
+      ])),
+      s.mealPlan ? el('button', {
+        class: 'btn btn-ghost btn-block', style: 'margin-top:10px', type: 'button', text: 'Restore default meal plan',
+        onclick: () => { store.saveSettings({ mealPlan: null }); toast('Default plan restored', 'reset'); paint(); }
+      }) : null
+    ]));
+
+    /* ---- habits ---- */
+    const habits = store.getHabits();
+    container.appendChild(el('section', { class: 'card accent-habits' }, [
+      el('h3', { class: 'eyebrow', style: 'margin-bottom:4px', text: 'Habits' }),
+      row('Hide private habits', 'Keeps them behind a veil on the Habits screen',
+        toggle(s.hidePrivate, v => { store.saveSettings({ hidePrivate: v }); toast(v ? 'Private habits hidden' : 'Private habits shown'); })),
+      el('p', { class: 'eyebrow', style: 'margin:14px 0 8px', text: `Tracking ${habits.length} habits` }),
+      ...habits.map(h => el('div', { class: 'plan-row', style: 'cursor:default' }, [
+        el('span', { class: 'grow' }, [
+          el('strong', { text: h.name }),
+          el('span', { class: 'dim', style: 'display:block;font-size:12px',
+            text: `${h.type}${h.unit ? ' · ' + h.unit : ''}${h.private ? ' · private' : ''}` })
+        ]),
+        el('button', {
+          class: 'link-more', type: 'button', text: h.private ? 'Make open' : 'Make private',
+          onclick: () => {
+            const list = store.getHabits().map(x => x.id === h.id ? { ...x, private: !x.private } : x);
+            store.saveHabits(list); paint();
+          }
+        })
+      ])),
+      el('a', { class: 'btn btn-block', style: 'margin-top:10px', href: '#/habits', text: 'Add or remove habits' }),
+      s.habits ? el('button', {
+        class: 'btn btn-ghost btn-block', style: 'margin-top:8px', type: 'button', text: 'Restore default habits',
+        onclick: () => { store.saveSettings({ habits: null }); toast('Default habits restored', 'reset'); paint(); }
+      }) : null
+    ]));
+
+    /* ---- score weighting ---- */
+    const weights = store.getScoreWeights();
+    const total = Object.values(weights).reduce((a, b) => a + b, 0);
+    container.appendChild(el('section', { class: 'card accent-progress' }, [
+      el('h3', { class: 'eyebrow', style: 'margin-bottom:4px', text: 'Daily score weighting' }),
+      ...Object.entries(weights).map(([k, v]) => row(
+        k[0].toUpperCase() + k.slice(1),
+        `${Math.round((v / total) * 100)}% of the score`,
+        stepper(v, 0, 100, 5, nv => {
+          store.saveSettings({ scoreWeights: { ...store.getScoreWeights(), [k]: nv } });
+        })
+      )),
+      el('p', { class: 'dim', style: 'font-size:12px;padding-top:10px;line-height:1.45',
+        text: 'Weight tracking scores whether you recorded a measurement, never whether the number fell. Shares are normalised, so they need not add to 100.' }),
+      s.scoreWeights ? el('button', {
+        class: 'btn btn-ghost btn-block', style: 'margin-top:8px', type: 'button', text: 'Restore default weighting',
+        onclick: () => { store.saveSettings({ scoreWeights: null }); toast('Defaults restored', 'reset'); paint(); }
+      }) : null
+    ]));
+
+    /* ---- workout ---- */
+    container.appendChild(el('section', { class: 'card accent-workout' }, [
+      el('h3', { class: 'eyebrow', style: 'margin-bottom:4px', text: 'Workout defaults' }),
+      row('Default sets', 'Rows shown in the set logger', stepper(s.defaultSets, 1, 8, 1, v => store.saveSettings({ defaultSets: v }))),
+      row('Default reps', 'Placeholder in the reps field', stepper(s.defaultReps, 1, 30, 1, v => store.saveSettings({ defaultReps: v }))),
+      row('Rest timer', 'Length of one rest period', stepper(s.restSeconds, 15, 600, 15, v => store.saveSettings({ restSeconds: v }))),
+      row('Auto-start rest', 'Start the timer when a set is ticked', toggle(s.autoRest, v => store.saveSettings({ autoRest: v })))
+    ]));
+
+    /* ---- privacy ---- */
+    container.appendChild(el('section', { class: 'card' }, [
+      el('h3', { class: 'eyebrow', style: 'margin-bottom:8px', text: 'Your data stays on this device' }),
+      el('p', { class: 'muted', style: 'font-size:14px;line-height:1.5',
+        text: 'Your weight, workout, meal and private habit data are stored locally in your browser. Nothing is uploaded to a server.' }),
+      el('ul', { class: 'list', style: 'margin-top:12px' }, [
+        priv('No account, no sign-in'),
+        priv('No analytics or third-party tracking'),
+        priv('No external database — the app works fully offline'),
+        priv('Habit data never leaves this device')
+      ]),
+      el('p', { class: 'dim', style: 'font-size:12px;margin-top:12px',
+        text: 'Because it is local-only, clearing your browser data erases it. Export a backup to keep a copy.' })
+    ]));
+
+    /* ---- data ---- */
+    const fileInput = el('input', { type: 'file', accept: 'application/json', class: 'sr-only' });
+    fileInput.addEventListener('change', async () => {
+      const file = fileInput.files?.[0];
+      if (!file) return;
+      try {
+        store.importData(await file.text());
+        toast('Data restored');
+        paint();
+      } catch {
+        toast('Could not read that file', 'close');
+      }
+      fileInput.value = '';
+    });
+
+    container.appendChild(el('section', { class: 'card stack' }, [
+      el('h3', { class: 'eyebrow', text: 'Data' }),
+      el('button', { class: 'btn btn-block', type: 'button', text: 'EXPORT MY DATA', onclick: exportBackup }),
+      el('button', { class: 'btn btn-block', type: 'button', text: 'IMPORT DATA', onclick: () => fileInput.click() }),
+      fileInput,
+      el('p', { class: 'eyebrow', style: 'margin-top:8px', text: 'Reset' }),
+      resetBtn('Reset workout data', 'Sessions, logged sets and personal records are removed. Weight, meals and habits are kept.', 'workout'),
+      resetBtn('Reset weight data', 'Every weigh-in is removed, including check-ins and check-outs.', 'weight'),
+      resetBtn('Reset nutrition data', 'Meal completion history is removed. Your meal plan is kept.', 'nutrition'),
+      resetBtn('Reset habit data', 'All habit records are removed. Your habit list is kept.', 'habits'),
+      resetBtn('Reset everything', 'Settings, weight, workouts, meals and habits are all removed from this device.', 'all')
+    ]));
+
+    /* ---- about ---- */
+    container.appendChild(el('section', { class: 'card' }, [
+      el('h3', { class: 'eyebrow', style: 'margin-bottom:8px', text: 'About' }),
+      el('p', { class: 'muted', style: 'font-size:14px',
+        text: 'A personal gym companion: 57 exercises with animated form visuals, weight, nutrition and habit tracking — all offline.' }),
+      el('p', { class: 'dim', style: 'font-size:12.5px;margin-top:10px',
+        text: 'General training guidance only — not medical advice. Stop if a movement causes sharp or unusual pain.' })
+    ]));
+  }
+
+  /* ---------- meal editor ---------- */
+  function editMeal(meal) {
+    const name = el('input', { class: 'input', type: 'text', value: meal.name, 'aria-label': 'Meal name', maxlength: '24' });
+    const kcal = el('input', { class: 'input', type: 'number', value: String(meal.kcal), min: '0', step: '10', 'aria-label': 'Approximate calories' });
+    const protein = el('input', { class: 'input', type: 'number', value: String(meal.protein), min: '0', step: '1', 'aria-label': 'Approximate protein' });
+    const items = el('textarea', {
+      class: 'input', rows: '7', 'aria-label': 'Items, one per line', style: 'resize:vertical;line-height:1.5'
+    });
+    items.value = meal.items.join('\n');
+
+    const body = el('div', { class: 'stack' }, [
+      el('div', { class: 'field' }, [el('label', { text: 'Meal name' }), name]),
+      el('div', { class: 'row', style: 'gap:10px' }, [
+        el('div', { class: 'field grow' }, [el('label', { text: '≈ kcal' }), kcal]),
+        el('div', { class: 'field grow' }, [el('label', { text: '≈ protein (g)' }), protein])
+      ]),
+      el('div', { class: 'field' }, [el('label', { text: 'Items — one per line' }), items]),
+      el('button', {
+        class: 'btn btn-primary btn-lg btn-block', type: 'button', text: 'SAVE MEAL',
+        onclick: () => {
+          const plan = store.getMealPlan().map(m => m.id === meal.id ? {
+            ...m,
+            name: name.value.trim() || m.name,
+            kcal: Number(kcal.value) || 0,
+            protein: Number(protein.value) || 0,
+            items: items.value.split('\n').map(x => x.trim()).filter(Boolean)
+          } : m);
+          store.saveSettings({ mealPlan: plan });
+          toast('Meal saved');
+          ref.close();
+          paint();
+        }
+      })
+    ]);
+    const ref = sheet(`Edit ${meal.name}`, body);
+  }
+
+  function resetBtn(label, message, scope) {
+    return el('button', {
+      class: 'btn btn-block btn-danger', type: 'button', text: label,
+      onclick: () => confirmSheet(label + '?', message, () => {
+        store.clearAll(scope);
+        toast(`${label} done`, 'reset');
+        paint();
+      })
+    });
+  }
+
+  paint();
+  return { title: 'Settings', eyebrow: 'Preferences', node: container };
+}
+
+function priv(text) {
+  return el('li', { class: 'cue cue-good' }, [el('i', { text: '✓' }), el('span', { text })]);
+}
+
 function exportBackup() {
   const blob = new Blob([store.exportData()], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
-  const a = el('a', { href: url, download: `gym-backup-${store.dateKey()}.json` });
+  const a = el('a', { href: url, download: `fitness-data-${store.dateKey()}.json` });
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -170,11 +332,13 @@ function exportBackup() {
   toast('Backup downloaded');
 }
 
+/* Destructive actions always take two deliberate taps. */
 function confirmSheet(title, message, onConfirm) {
   const body = el('div', { class: 'stack' }, [
     el('p', { class: 'muted', text: message }),
+    el('p', { class: 'dim', style: 'font-size:12.5px', text: 'This cannot be undone. Export a backup first if you might want it back.' }),
     el('button', {
-      class: 'btn btn-danger btn-block btn-lg', type: 'button', text: 'Yes, continue',
+      class: 'btn btn-danger btn-block btn-lg', type: 'button', text: 'Yes, delete',
       onclick: () => { onConfirm(); ref.close(); }
     }),
     el('button', { class: 'btn btn-ghost btn-block', type: 'button', text: 'Cancel', onclick: () => ref.close() })

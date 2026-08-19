@@ -1,6 +1,6 @@
-# GYM — Personal Workout Companion
+# GYM — Personal Gym Operating System
 
-A mobile-first, offline-capable gym workout visualizer with animated form guides for every exercise in your weekly split. Built for GitHub Pages — no backend, no API keys, no dependencies.
+A mobile-first, offline-capable gym companion: animated form guides for every exercise in your weekly split, plus body-weight, nutrition and habit tracking. Built for GitHub Pages — no backend, no API keys, no dependencies, and nothing leaves your device.
 
 **Live demo:** `https://<your-username>.github.io/<repo-name>/`
 
@@ -15,11 +15,18 @@ A mobile-first, offline-capable gym workout visualizer with animated form guides
 | **57 unique exercises** | Each with setup, execution, form cues, common mistakes, breathing, safety |
 | **Muscle map** | Front + back anatomical silhouette with primary/secondary highlighting |
 | **Workout mode** | One exercise at a time, set/rep/weight/RPE logging, big touch targets |
+| **Gym check-in / check-out** | Weigh in before and after a session; the difference is labelled session weight change, never fat loss |
+| **Weight journey** | Trend chart (7-day moving average), 7D–ALL ranges, goal progress, milestones, full history |
+| **Nutrition tracking** | Your 3-meal plan with per-meal completion and approximate kcal / protein totals |
+| **Habit tracking** | Yes/no, count, quantity and duration habits, streaks and 30-day trends; private habits stay collapsed |
+| **Daily progress score** | Workout + nutrition + habits + weight-*recording*, with configurable weighting |
+| **Day / Week / Month / Year** | Per-day bars, a month calendar, a 12-month rollup and lifetime totals |
 | **Progress dashboard** | Weekly completion, personal records, exercise history |
 | **Rest timer** | Presets, auto-start after sets, vibration + audio alert |
 | **Search & filter** | Instant search by name/muscle/equipment, muscle-group chips |
 | **PWA / Offline** | Install to home screen, works fully offline via Service Worker |
-| **localStorage persistence** | Sessions, PRs, settings survive browser restarts |
+| **localStorage persistence** | Sessions, PRs, weight, meals, habits and settings survive browser restarts |
+| **Export / import / scoped reset** | Full JSON backup, restore on another device, and reset one data type at a time |
 | **Dark-mode UI** | High contrast, large text, 44px minimum tap targets |
 
 ---
@@ -81,26 +88,34 @@ gym-workout-app/
 ├── css/
 │   ├── base.css            # Tokens, reset, shell, nav
 │   ├── components.css      # Cards, buttons, figure, muscle map, timer
-│   └── views.css           # Per-screen layouts
+│   ├── views.css           # Per-screen layouts
+│   └── tracking.css        # Dashboard, weight, nutrition, habits, calendar
 ├── js/
 │   ├── app.js              # Hash router, app shell
 │   ├── ui.js               # DOM helpers, icons, animated figure component
 │   ├── figure.js           # Forward-kinematics stick-figure engine
 │   ├── muscles.js          # Anatomical muscle map (front + back)
-│   ├── storage.js          # localStorage (sessions, PRs, settings)
+│   ├── storage.js          # localStorage: sessions, PRs, weight, meals, habits, scoring
 │   ├── timer.js            # Rest timer (WebAudio + vibration)
+│   ├── chart.js            # SVG weight-trend chart + year bars (no library)
 │   ├── data/
-│   │   ├── archetypes.js   # 27 movement archetypes (poses + equipment)
+│   │   ├── archetypes.js   # 53 movement archetypes (poses + equipment)
 │   │   ├── exercises.js    # 57 exercise definitions
-│   │   └── workouts.js     # Weekly program (7 days)
+│   │   ├── workouts.js     # Weekly program (7 days)
+│   │   └── plan.js         # Meal plan, habit defaults, milestones, score weights
 │   └── views/
-│       ├── home.js         # Today's dashboard
+│       ├── dashboard.js    # "Today" — weight, workout, nutrition, habits, score
+│       ├── daystrip.js     # Shared Mon–Sun selector
+│       ├── weight.js       # Weight journey: trend, milestones, history
+│       ├── weighin.js      # Check-in / check-out capture sheet
+│       ├── nutrition.js    # Meal plan + completion
+│       ├── habits.js       # Habit tracking, streaks, custom habits
 │       ├── workouts.js     # Weekly schedule + day detail
 │       ├── workoutMode.js  # One-exercise-at-a-time tracker
 │       ├── detail.js       # Exercise detail (visual + form guide)
 │       ├── library.js      # Full exercise library (search + filters)
-│       ├── progress.js     # Weekly completion, PRs, history
-│       ├── settings.js     # Profile, defaults, data export/import
+│       ├── progress.js     # Day / week / month / year adherence + records
+│       ├── settings.js     # Profile, goal, plan, habits, data management
 │       └── setgrid.js      # Set/rep/weight/RPE logger
 └── assets/
     └── icons/              # PWA icons (SVG + PNG)
@@ -133,12 +148,15 @@ workouts.js (weekly program)
     → references exercise IDs
 exercises.js (57 definitions)
     → references archetype IDs
-archetypes.js (27 movement patterns)
+archetypes.js (53 movement patterns)
     → drives figure.js animations
 muscles.js (anatomical regions)
     → drives muscle-map highlighting
+plan.js (meal plan, habits, milestones)
+    → drives nutrition + habit tracking
 storage.js (localStorage)
-    → persists sessions, PRs, settings
+    → persists sessions, PRs, weight, meals, habits, settings
+    → computes daily / weekly / monthly / yearly progress
 ```
 
 ### Adding a New Exercise
@@ -147,6 +165,50 @@ storage.js (localStorage)
 2. If the movement pattern is new, add an archetype to `js/data/archetypes.js`
 3. Reference the exercise ID in `js/data/workouts.js`
 4. Done — it appears in the library, detail screen, and workout mode automatically
+
+---
+
+## How Progress Is Measured
+
+Four things are tracked separately, on purpose — rolling them into one
+"fat loss %" would invent a number the data cannot support.
+
+| Metric | What it means |
+|--------|---------------|
+| **Workout progress** | Exercises completed out of those scheduled |
+| **Nutrition adherence** | Meals marked complete out of the plan |
+| **Habit adherence** | Days a habit met its own aim (0 cigarettes, 8 glasses of water…) |
+| **Weight tracking** | Whether a measurement was **recorded** — never whether it went down |
+
+The **daily score** blends workout 30% / nutrition 30% / habits 25% /
+weight-recording 15% (all configurable in Settings). Two rules are deliberate:
+
+- A **heavier reading can never lower your score.** Body weight moves with
+  hydration, food and glycogen; only recording it counts.
+- On rest days the workout share is **redistributed**, not counted as a miss.
+
+Averages only include days that actually have data, so a year does not read as
+"18%" simply because you started tracking in July.
+
+### Weight goal
+
+Your target is a **range** (default 70–75 kg) with a primary target (72.5 kg).
+The starting weight is captured at your first weigh-in and is editable in
+Settings. Milestones tick off as the current weight passes them, and remaining
+weight never displays as negative.
+
+---
+
+## Privacy
+
+Everything is stored in `localStorage` on the device. There is no account, no
+server, no analytics and no third-party requests — the app is entirely static
+files, which is also why it works offline. Habit data in particular never
+leaves the device.
+
+Because it is local-only, clearing browser data erases it. Use
+**Settings → Export my data** to keep a JSON backup, and **Import** to restore
+it on another device.
 
 ---
 
@@ -163,6 +225,13 @@ storage.js (localStorage)
 | **Default sets** | Rows shown in the set logger |
 | **Default reps** | Placeholder in reps field |
 | **Rest timer** | Default rest length (auto-start after a set) |
+| **Starting weight** | Captured at your first weigh-in; editable afterwards |
+| **Target weight & range** | Primary target inside a low/high range (default 70–75 kg) |
+| **Daily calories / protein** | Leave blank to total the meal plan automatically |
+| **Meal plan** | Rename meals, edit items, adjust approximate kcal and protein |
+| **Habits** | Make a habit private or open; add and remove from the Habits screen |
+| **Daily score weighting** | Rebalance workout / nutrition / habits / weight-recording |
+| **Export · Import · Reset** | JSON backup, restore, and per-data-type resets |
 
 ### Changing the Program
 
