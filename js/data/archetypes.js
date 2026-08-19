@@ -282,8 +282,8 @@ export const ARCHETYPES = {
       { type: 'fixedBar', at: [130, 32] }
     ],
     arrow: { joint: 'hip', bow: 0.1 },
-    start: { hip: [130, 124], torso: 92, handAt: [130, 32], elbowBend: 1, thigh: -100, shin: -125 },
-    end:   { hip: [130, 108], torso: 94, handAt: [130, 32], elbowBend: 1, thigh: -100, shin: -125 }
+    start: { hip: [130, 133], torso: 92, handAt: [130, 32], elbowBend: 1, thigh: -95, shin: -145 },
+    end:   { hip: [130, 108], torso: 94, handAt: [130, 32], elbowBend: 1, thigh: -95, shin: -145 }
   },
 
   bentRow: {
@@ -467,10 +467,12 @@ export const ARCHETYPES = {
   squat: {
     view: 'side',
     phases: ['STANDING', 'DESCEND', 'BOTTOM POSITION'],
-    props: [floor, { type: 'plate', at: 'neck', fg: true, r: 19 }],
+    /* bar rides on the traps, behind and below the neck joint, so it must not
+       be centred on the neck point or it covers the head */
+    props: [floor, { type: 'plate', at: 'neck', offset: [-9, 4], fg: true, r: 13 }],
     arrow: { joint: 'hip', bow: 0.12 },
-    start: { hip: [130, 122], torso: 92, upper: -150, fore: 140, footAt: [142, 188], kneeBend: 1 },
-    end:   { hip: [124, 158], torso: 76, upper: -150, fore: 140, footAt: [142, 188], kneeBend: 1 }
+    start: { hip: [130, 122], torso: 92, upper: -115, fore: 100, footAt: [142, 188], kneeBend: 1 },
+    end:   { hip: [124, 158], torso: 76, upper: -115, fore: 100, footAt: [142, 188], kneeBend: 1 }
   },
 
   legPress: {

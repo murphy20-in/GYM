@@ -4,7 +4,7 @@
  * the six form cues. Navigation is two big targets at the bottom of the screen.
  */
 
-import { el, icon, exerciseFigure, toast, minutesBetween } from '../ui.js';
+import { el, icon, exerciseFigure, minutesBetween } from '../ui.js';
 import { getDay, dayFor, exercisesOf, nextTrainingDay } from '../data/workouts.js';
 import { getExercise } from '../data/exercises.js';
 import * as store from '../storage.js';

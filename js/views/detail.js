@@ -47,8 +47,10 @@ export function view(params, app) {
     el('span', { class: 'tag', text: ex.difficulty })
   ]);
 
+  /* the sticky top bar already carries the name; repeating it here would just
+     push the visual — the reason someone opens this screen — below the fold */
   const head = el('header', { class: 'detail-head' }, [
-    el('h2', { text: ex.name }),
+    el('h2', { class: 'sr-only', text: ex.name }),
     tags
   ]);
 

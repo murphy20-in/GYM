@@ -1,6 +1,6 @@
 /* settings.js — personalisation and local data management. */
 
-import { el, toast, sheet, mmss } from '../ui.js';
+import { el, toast, sheet } from '../ui.js';
 import * as store from '../storage.js';
 
 const GOALS = ['Muscle Gain', 'Strength', 'Fat Loss', 'General Fitness'];

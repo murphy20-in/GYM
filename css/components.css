@@ -38,6 +38,16 @@
 .muted { color: var(--text-2); }
 .dim { color: var(--text-3); }
 
+/* Inline icons carry no intrinsic size, so any flex/grid parent stretches them. */
+.btn svg, .chip svg, .tag svg, .toast svg, .timer-fab svg,
+.set-check svg, .ex-index svg, .topbar svg, .seg svg {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+}
+.btn-lg svg { width: 22px; height: 22px; }
+.finish-card .tick svg { width: 38px; height: 38px; stroke-width: 2.6; }
+
 /* ---------- buttons ---------- */
 
 .btn {
@@ -169,11 +179,17 @@
 .fx-frame-fill { fill: #232c38; }
 .fx-floor { stroke: #2a323d; }
 
-/* end-position ghost */
-.fx-ghost { opacity: .17; }
-.fx-ghost.fx-torso, .fx-ghost.fx-head { opacity: .13; }
+/* End-position ghost: drawn as a thin outline so it reads as "the other end of
+   the movement" instead of a second body overlapping the first. */
+.fx-ghost { opacity: .3; stroke-width: 2; }
+.fx-ghost.fx-torso-line { stroke-width: 3.5; }
+.fx-ghost.fx-head { opacity: .18; }
+.fx-ghost.fx-torso { opacity: .16; }
+.fx-ghost.fx-joint { opacity: 0; }
 
 /* range-of-motion arrow */
+.fx-arrowhead { fill: var(--warn); stroke: none; }
+
 .fx-arrow {
   stroke: var(--warn);
   stroke-width: 2.4;
@@ -339,7 +355,7 @@
 .timer-fab {
   position: fixed;
   right: 14px;
-  bottom: calc(var(--nav-h) + 14px);
+  bottom: calc(var(--nav-h) + 74px);
   z-index: 45;
   display: flex;
   align-items: center;

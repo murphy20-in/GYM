@@ -36,12 +36,16 @@ A mobile-first, offline-capable gym workout visualizer with animated form guides
    git remote add origin https://github.com/<your-username>/<repo-name>.git
    git push -u origin main
    ```
-3. **Enable GitHub Pages**
-   - Open the repo → **Settings** → **Pages** (left sidebar)
-   - **Build and deployment** → **Source**: *GitHub Actions*
+3. **Pages enables itself**
+   - The workflow passes `enablement: true` to `actions/configure-pages`, so the
+     first successful run switches Pages on with the *GitHub Actions* source.
+     No Settings changes are needed.
+   - If your org blocks that, do it by hand instead:
+     **Settings** → **Pages** → **Build and deployment** → **Source**: *GitHub Actions*
 4. **Trigger the first deploy**
    - The workflow runs automatically on push to `main`
    - Or go to **Actions** → **Deploy to GitHub Pages** → **Run workflow**
+   - Watch it under the **Actions** tab; the deploy step prints the live URL
 5. **Open the generated URL** on your phone
    - It will look like: `https://<your-username>.github.io/<repo-name>/`
 6. **Add to Home Screen** (iOS Safari / Android Chrome)

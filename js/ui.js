@@ -1,6 +1,6 @@
 /* ui.js — DOM helpers, icons, the exercise figure component, sheets and toasts. */
 
-import { animate, frameNodes, VB } from './figure.js';
+import { animate, frameNodes, framingFor } from './figure.js';
 import { ARCHETYPES } from './data/archetypes.js';
 
 /* ---------- DOM ---------- */
@@ -65,9 +65,10 @@ const attrStr = a => Object.entries(a)
 export function figureThumb(archetypeId, t = 0.62) {
   const spec = ARCHETYPES[archetypeId];
   if (!spec) return '';
-  const nodes = frameNodes({ ...spec, ghost: false, arrow: null }, t);
+  const flat = { ...spec, ghost: false, arrow: null };
+  const nodes = frameNodes(flat, t);
   const body = nodes.map(n => `<${n.tag} ${attrStr(n.attrs)} class="${n.cls || ''}"/>`).join('');
-  return `<svg viewBox="0 0 ${VB.w} ${VB.h}" aria-hidden="true" focusable="false">${body}</svg>`;
+  return `<svg viewBox="${framingFor(flat, 8)}" aria-hidden="true" focusable="false">${body}</svg>`;
 }
 
 /* ---------- animated figure ---------- */

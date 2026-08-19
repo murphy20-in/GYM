@@ -282,7 +282,7 @@ const PROPS = {
   },
 
   /* Fixed overhead bar (pull-ups) or dip bars. */
-  fixedBar: (P, o) => [circ(o.at, 6, 'fx-plate'), circ(o.at, 2, 'fx-plate-hub')],
+  fixedBar: (P, o) => [circ(o.at, o.r ?? 8, 'fx-plate'), circ(o.at, (o.r ?? 8) * 0.32, 'fx-plate-hub')],
 
   rig: (P, o) => {
     const out = [];
@@ -363,6 +363,58 @@ export function frameNodes(spec, t) {
   return nodes;
 }
 
+/* ---------- bounds ---------- */
+
+/** Bounding box of a node list, computed from the specs rather than the DOM so
+ *  it works before the SVG is attached (and in tests). */
+export function boundsOf(nodes) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  const hit = (x, y) => { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; };
+
+  for (const n of nodes) {
+    /* the ground line spans the whole canvas by design; letting it drive the
+       bounds would defeat the framing, and it looks correct clipped */
+    if ((n.cls || '').includes('fx-floor')) continue;
+    const a = n.attrs;
+    if (n.tag === 'line') { hit(a.x1, a.y1); hit(a.x2, a.y2); }
+    else if (n.tag === 'circle') { hit(a.cx - a.r, a.cy - a.r); hit(a.cx + a.r, a.cy + a.r); }
+    else if (n.tag === 'ellipse') {
+      /* rotated plates: use the larger radius on both axes, which over-covers slightly */
+      const r = Math.max(a.rx, a.ry);
+      hit(a.cx - r, a.cy - r); hit(a.cx + r, a.cy + r);
+    }
+    else if (n.tag === 'rect') { hit(a.x, a.y); hit(a.x + a.width, a.y + a.height); }
+    else if (n.tag === 'path' && a.d) {
+      /* every path here uses absolute commands, so the raw numbers are points;
+         Bezier control points may over-estimate, which is harmless */
+      const nums = String(a.d).match(/-?\d+(\.\d+)?/g) || [];
+      for (let i = 0; i + 1 < nums.length; i += 2) hit(Number(nums[i]), Number(nums[i + 1]));
+    }
+  }
+  if (!isFinite(x0)) return null;
+  return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
+}
+
+/**
+ * viewBox that tightly frames a movement across its whole range.
+ * Archetypes are authored in one shared 260x210 space, so without this a compact
+ * movement (a curl) would render far smaller than a sprawling one (a leg press).
+ */
+export function framingFor(spec, pad = 12) {
+  let box = null;
+  for (const t of [0, 0.5, 1]) {
+    const b = boundsOf(frameNodes(spec, t));
+    if (!b) continue;
+    box = box ? {
+      x: Math.min(box.x, b.x), y: Math.min(box.y, b.y),
+      width: Math.max(box.x + box.width, b.x + b.width) - Math.min(box.x, b.x),
+      height: Math.max(box.y + box.height, b.y + b.height) - Math.min(box.y, b.y)
+    } : b;
+  }
+  if (!box) return `0 0 ${VB.w} ${VB.h}`;
+  return `${box.x - pad} ${box.y - pad} ${box.width + pad * 2} ${box.height + pad * 2}`;
+}
+
 /* ---------- retained-mode painter ---------- */
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -371,13 +423,13 @@ export function createStage(svg) {
   svg.setAttribute('viewBox', `0 0 ${VB.w} ${VB.h}`);
   svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
   svg.innerHTML =
-    `<defs><marker id="fx-head" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto-start-reverse">` +
-    `<path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/></marker></defs>`;
+    `<defs><marker id="fx-head" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="4" markerHeight="4" orient="auto">` +
+    `<path d="M 0 1 L 9 5 L 0 9 z" class="fx-arrowhead"/></marker></defs>`;
   const layer = document.createElementNS(SVG_NS, 'g');
   svg.appendChild(layer);
   let cache = [];
 
-  return function paint(nodes) {
+  function paint(nodes) {
     /* create/replace only when the node shape actually changes */
     for (let i = 0; i < nodes.length; i++) {
       const spec = nodes[i];
@@ -399,7 +451,10 @@ export function createStage(svg) {
       }
     }
     while (cache.length > nodes.length) layer.removeChild(cache.pop());
-  };
+  }
+
+  paint.layer = layer;
+  return paint;
 }
 
 /* Eased ping-pong drive: hold at start, move, hold at finish, return. */
@@ -417,6 +472,8 @@ const easeInOut = x => x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2;
  */
 export function animate(svg, spec, opts = {}) {
   const paint = createStage(svg);
+
+
   const period = opts.period || 3200;
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   let raf = 0, running = false, t0 = 0, manual = null, onPhase = opts.onPhase;
@@ -444,6 +501,7 @@ export function animate(svg, spec, opts = {}) {
     reduced,
     destroy() { running = false; cancelAnimationFrame(raf); }
   };
+  svg.setAttribute('viewBox', framingFor(spec));
   reduced ? draw(0.5) : api.play();
   return api;
 }

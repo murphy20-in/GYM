@@ -24,8 +24,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # enablement: true turns Pages on (with the GitHub Actions source) using the
+      # workflow's own token, so the repo does not need the Settings -> Pages step.
       - name: Setup Pages
         uses: actions/configure-pages@v5
+        with:
+          enablement: true
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
