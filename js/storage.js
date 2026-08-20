@@ -373,12 +373,53 @@ export function resetSession(dayId, date = new Date()) {
   write(K.sessions, all);
 }
 
+/* ---------- set classification ---------- */
+
+/** Set types. Warm-ups are logged but never counted as work. */
+export const SET_TYPES = {
+  warmup:  { id: 'warmup',  short: 'W', label: 'Warm-up', counts: false },
+  working: { id: 'working', short: '',  label: 'Working set', counts: true },
+  drop:    { id: 'drop',    short: 'D', label: 'Drop set', counts: true },
+  failure: { id: 'failure', short: 'F', label: 'To failure', counts: true }
+};
+
+export const setType = s => SET_TYPES[s?.type] || SET_TYPES.working;
+
+/**
+ * A completed set that counts toward volume, records and strength trends.
+ * Warm-ups are excluded: counting them would inflate volume and could set a
+ * "record" from a light preparatory set.
+ */
+export const isWorkingSet = s => !!s?.done && setType(s).counts;
+
+/** Per-exercise notes for one session. */
+export function setExerciseNote(dayId, exId, note, date = new Date()) {
+  const session = getSession(dayId, date);
+  const e = entry(session, exId, 1);
+  e.note = String(note || '').slice(0, 500);
+  saveSession(dayId, date, session);
+  return e;
+}
+
+export function getExerciseNote(dayId, exId, date = new Date()) {
+  return getSession(dayId, date).ex?.[exId]?.note || '';
+}
+
+/** The most recent completed working sets for an exercise, for one-tap reuse. */
+export function previousSets(exId, beforeDate = new Date()) {
+  const key = dateKey(beforeDate);
+  const hist = exerciseHistory(exId).find(h => h.date < key);
+  if (!hist) return null;
+  const sets = hist.sets.filter(s => isWorkingSet(s) || (s.weight && s.reps));
+  return sets.length ? { date: hist.date, sets } : null;
+}
+
 /* ---------- personal records ---------- */
 
 const allPRs = () => read(K.prs, {});
 
 function updatePR(exId, sets, date) {
-  const logged = sets.filter(s => s.done && Number(s.weight) > 0);
+  const logged = sets.filter(s => isWorkingSet(s) && Number(s.weight) > 0);
   if (!logged.length) return;
   const top = logged.reduce((a, b) => (Number(b.weight) > Number(a.weight) ? b : a));
   const prs = allPRs();
@@ -430,7 +471,7 @@ export function lifetimeStats() {
   let workouts = 0, sets = 0, volume = 0, lastDate = null;
   for (const s of sessions) {
     const entries = Object.values(s.ex || {});
-    const doneSets = entries.flatMap(e => e.sets.filter(x => x.done));
+    const doneSets = entries.flatMap(e => e.sets.filter(isWorkingSet));
     if (!doneSets.length) continue;
     workouts++;
     sets += doneSets.length;
@@ -1036,7 +1077,7 @@ export function strengthFor(exerciseId) {
   if (!history.length) return null;
 
   const sessions = history.map(h => {
-    const sets = h.sets.filter(s => Number(s.weight) > 0 && Number(s.reps) > 0);
+    const sets = h.sets.filter(s => Number(s.weight) > 0 && Number(s.reps) > 0 && setType(s).counts);
     if (!sets.length) return null;
     const top = sets.reduce((a, b) => (estimate1RM(b.weight, b.reps) > estimate1RM(a.weight, a.reps) ? b : a));
     return {
@@ -1082,7 +1123,7 @@ export function sessionHistory(limit = 60) {
     if (!day) continue;
 
     const entries = Object.values(session.ex || {});
-    const doneSets = entries.flatMap(e => e.sets.filter(s => s.done));
+    const doneSets = entries.flatMap(e => e.sets.filter(isWorkingSet));
     const exercisesDone = entries.filter(e => e.done).length;
     if (!doneSets.length && !exercisesDone) continue;
 
@@ -1252,7 +1293,7 @@ export function dataQuality(days = 30) {
     const entries = Object.values(session.ex || {});
     const done = entries.filter(e => e.done).length;
     if (done > 0 && done < ids.length) partial++;
-    const logged = entries.flatMap(e => e.sets.filter(x => x.done));
+    const logged = entries.flatMap(e => e.sets.filter(isWorkingSet));
     if (done > 0 && logged.every(x => !Number(x.weight))) noSets++;
   }
   if (partial) {

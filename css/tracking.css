@@ -486,3 +486,90 @@
   color: var(--accent-ink, #12030a);
 }
 .milestone-dot.reached span { color: var(--accent-ink, #12030a); }
+
+/* ---------- set logger ---------- */
+
+.prev-card {
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-soft);
+}
+
+.btn-sm {
+  min-height: 34px;
+  padding: 6px 12px;
+  font-size: 12.5px;
+  border-radius: 9px;
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  font-weight: 800;
+  letter-spacing: .06em;
+}
+
+/* set number doubles as the type control; the letter is the non-colour signal */
+.set-row > .n {
+  font-weight: 800;
+  border: 1px solid transparent;
+}
+.set-row > .n.type-warmup  { background: transparent; border-color: var(--line); color: var(--text-3); }
+.set-row > .n.type-drop    { background: rgba(255,176,32,.22); color: var(--warn); }
+.set-row > .n.type-failure { background: rgba(255,26,26,.22); color: var(--red, #ff1a1a); }
+.set-row.warmup input { opacity: .68; }
+
+.rpe-btn {
+  min-height: var(--tap);
+  border-radius: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.rpe-btn.set { color: var(--text); border-color: var(--line); }
+
+.rpe-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.rpe-choice {
+  min-height: 54px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  font-size: 18px;
+  font-weight: 800;
+}
+.rpe-choice[aria-pressed='true'] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+
+.note-row {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  min-height: var(--tap);
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px dashed var(--line);
+  text-align: left;
+}
+.note-text { font-size: 13.5px; color: var(--text-2); line-height: 1.45; }
+
+/* ---------- plate calculator ---------- */
+
+.plate-stack {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  margin-top: 10px;
+}
+.plate-chip {
+  min-width: 42px;
+  padding: 10px 8px;
+  border-radius: 8px;
+  font-weight: 800;
+  font-size: 14px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  border: 1px solid rgba(255, 255, 255, .18);
+}
+.plate-readout { padding: 4px 0; }

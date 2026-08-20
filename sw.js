@@ -5,7 +5,7 @@
  * needs the network again.
  */
 
-const VERSION = 'gym-v8';
+const VERSION = 'gym-v9';
 const ASSETS = [
   './',
   './index.html',
@@ -44,6 +44,7 @@ const ASSETS = [
   './js/views/progress.js',
   './js/views/settings.js',
   './js/views/setgrid.js',
+  './js/views/plates.js',
   './js/views/analytics.js',
   './js/views/mindset.js',
   './js/views/bodyAnalytics.js',
