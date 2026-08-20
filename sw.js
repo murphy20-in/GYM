@@ -5,7 +5,7 @@
  * needs the network again.
  */
 
-const VERSION = 'gym-v11';
+const VERSION = 'gym-v12';
 const ASSETS = [
   './',
   './index.html',
@@ -69,7 +69,10 @@ self.addEventListener('install', event => {
     await Promise.all(ASSETS.map(url =>
       cache.add(new Request(url, { cache: 'reload' })).catch(err => console.warn('Skipped', url, err))
     ));
-    self.skipWaiting();
+    /* Deliberately NOT skipWaiting() here. Activating immediately would serve
+       the new files to a page still running the old JS — a version skew that is
+       genuinely risky in an app this data-heavy. The page prompts instead, and
+       tells us to take over only when the user is ready to reload. */
   })());
 });
 
@@ -79,6 +82,11 @@ self.addEventListener('activate', event => {
     await Promise.all(keys.filter(k => k !== VERSION).map(k => caches.delete(k)));
     await self.clients.claim();
   })());
+});
+
+/* The page asks us to take over once the user accepts the update. */
+self.addEventListener('message', event => {
+  if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
 });
 
 self.addEventListener('fetch', event => {

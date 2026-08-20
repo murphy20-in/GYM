@@ -6,6 +6,8 @@ import * as store from '../storage.js';
 import { DOCS } from '../data/schema.js';
 import { storageStatus, requestPersistence, formatBytes, isInstalled, markExported, lastExport } from '../persist.js';
 
+export const APP_VERSION = 'gym-v12';
+
 const GOALS = ['Muscle Gain', 'Strength', 'Fat Loss', 'General Fitness'];
 const LEVELS = ['Beginner', 'Intermediate', 'Advanced'];
 
@@ -387,6 +389,10 @@ async function paintDurability(section) {
     section.appendChild(el('p', { class: 'dim', style: 'font-size:12px',
       text: `Using ${formatBytes(st.usage)}${st.quota ? ' of ' + formatBytes(st.quota) + ' available' : ''}.` }));
   }
+
+  /* Answers "am I actually on the new version?" without guesswork. */
+  section.appendChild(el('p', { class: 'dim', style: 'font-size:12px',
+    text: `App version ${APP_VERSION}` }));
 
   section.appendChild(el('p', {
     class: backup.never || backup.days > 14 ? 'tag tag-warn' : 'dim',

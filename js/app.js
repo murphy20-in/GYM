@@ -165,13 +165,75 @@ function buildShell() {
 
 /* ---------- service worker ---------- */
 
+/**
+ * Register the worker and, crucially, keep watching for updates.
+ *
+ * Without this the app caches itself and a new deploy is invisible until the
+ * user happens to clear storage — which is exactly what happened after the
+ * first few releases. The new worker now waits until the page offers a reload,
+ * so the running code and the cached assets are never from different versions.
+ */
 function registerSW() {
   if (!('serviceWorker' in navigator)) return;
   if (location.protocol === 'file:') return;   /* file:// cannot host a worker */
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register(new URL('../sw.js', import.meta.url), { scope: './' })
-      .catch(err => console.warn('Service worker registration failed:', err));
+
+  let reloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (reloading) return;
+    reloading = true;
+    location.reload();
   });
+
+  window.addEventListener('load', async () => {
+    let reg;
+    try {
+      reg = await navigator.serviceWorker.register(new URL('../sw.js', import.meta.url), { scope: './' });
+    } catch (err) {
+      console.warn('Service worker registration failed:', err);
+      return;
+    }
+
+    const offer = worker => {
+      /* No controller means this is the first install, not an update — there is
+         nothing to reload into. */
+      if (!navigator.serviceWorker.controller) return;
+      showUpdateBanner(() => worker.postMessage({ type: 'SKIP_WAITING' }));
+    };
+
+    if (reg.waiting) offer(reg.waiting);
+
+    reg.addEventListener('updatefound', () => {
+      const worker = reg.installing;
+      if (!worker) return;
+      worker.addEventListener('statechange', () => {
+        if (worker.state === 'installed') offer(worker);
+      });
+    });
+
+    /* Check again when the app is reopened — an installed PWA can sit for days
+       without a fresh navigation. */
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') reg.update().catch(() => {});
+    });
+    setInterval(() => reg.update().catch(() => {}), 60 * 60 * 1000);
+  });
+}
+
+/** A quiet, dismissible prompt — never an interruption mid-set. */
+function showUpdateBanner(onAccept) {
+  if (document.querySelector('.update-banner')) return;
+  const banner = el('div', { class: 'update-banner', role: 'status' }, [
+    el('span', { class: 'grow', text: 'A new version is ready' }),
+    el('button', {
+      class: 'btn btn-sm', type: 'button', text: 'RELOAD',
+      onclick: () => { banner.remove(); onAccept(); }
+    }),
+    el('button', {
+      class: 'btn-icon', type: 'button', 'aria-label': 'Dismiss',
+      html: icon('close'), onclick: () => banner.remove()
+    })
+  ]);
+  document.body.appendChild(banner);
 }
 
 /* ---------- boot ---------- */
