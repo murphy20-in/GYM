@@ -51,6 +51,25 @@ export function view(params, app) {
       text: 'SESSION HISTORY →'
     }));
 
+    /* Data quality: report gaps rather than letting them quietly skew every
+       number below. */
+    const dq = store.dataQuality();
+    if (!dq.clean) {
+      container.appendChild(el('section', { class: 'card', style: 'border-color:rgba(255,176,32,.32)' }, [
+        el('div', { class: 'row-between' }, [
+          el('p', { class: 'eyebrow', style: 'color:var(--warn)', text: '⚠ Data quality' }),
+          el('span', { class: 'dim', style: 'font-size:12px', text: `last ${dq.windowDays} days` })
+        ]),
+        el('div', { class: 'stack', style: 'margin-top:10px' }, dq.findings.map(f => el('div', {}, [
+          el('div', { class: 'row-between' }, [
+            el('span', { style: 'font-size:14px;font-weight:650', text: f.label }),
+            f.action ? el('a', { class: 'link-more', href: f.action.href, text: f.action.label }) : null
+          ]),
+          el('p', { class: 'dim', style: 'font-size:12px;margin-top:2px;line-height:1.45', text: f.detail })
+        ])))
+      ]));
+    }
+
     container.appendChild(el('div', { class: 'chips', role: 'group', 'aria-label': 'Analytics category', style: 'margin-top:8px' },
       TABS.map(t => el('button', {
         class: 'chip', type: 'button', html: `${icon(t.icon)}<span>${t.label}</span>`, 'aria-pressed': String(t.id === activeTab),
@@ -317,7 +336,8 @@ export function view(params, app) {
             const reached = goal.current != null && goal.current <= m;
             return el('div', { class: `milestone-dot${reached ? ' reached' : ''}`, style: 'display:flex;flex-direction:column;align-items:center;gap:4px' }, [
               el('div', { style: 'width:40px;height:40px;border-radius:50%;border:2px solid ' + (reached ? 'var(--accent)' : 'var(--line)') + ';background:' + (reached ? 'var(--accent)' : 'transparent') + ';display:flex;align-items:center;justify-content:center' },
-                reached ? icon('check') : el('span', { style: 'font-weight:800;color:var(--text-3)', text: `${m}` })),
+                reached ? el('span', { html: icon('check'), style: 'display:flex' })
+                        : el('span', { style: 'font-weight:800;color:var(--text-3)', text: `${m}` })),
               el('span', { style: 'font-size:11px;color:var(--text-3)', text: `${m} ${units}` })
             ]);
           })
@@ -339,6 +359,7 @@ export function view(params, app) {
     const range = rangeMap[period] || '30D';
     const stats = store.weightStats(range);
     const goal = store.weightGoal();
+    const quality = store.trendQuality();
     const series = store.weightSeries(range);
 
     /* Today's check-in / check-out, always available on the weight tab so a
@@ -398,28 +419,63 @@ export function view(params, app) {
     if (rate != null || projection) {
       container.appendChild(el('section', { class: 'card' }, [
         el('p', { class: 'eyebrow', text: 'Trend Analysis' }),
+
+        /* Raw and trend side by side: the scale reading is what you saw this
+           morning, the trend is what your weight is actually doing. */
+        el('div', { class: 'stat-row', style: 'margin-top:10px' }, [
+          statBox(`Scale ${units}`, goal.current != null ? String(goal.current) : '—'),
+          statBox(`Trend ${units}`, goal.trendWeight != null ? String(goal.trendWeight) : '—')
+        ]),
+
         rate != null ? el('div', { class: 'stat-row', style: 'margin-top:10px' }, [
-          statBox('Weekly Rate', `${rate > 0 ? '+' : ''}${rate} ${units}/week`),
-          statBox('Direction', rate < 0 ? '▼ Losing' : rate > 0 ? '▲ Gaining' : '→ Stable')
+          statBox(`${units} / week`, `${rate > 0 ? '+' : ''}${rate}`),
+          statBox(rate < -0.05 ? 'Losing' : rate > 0.05 ? 'Gaining' : 'Holding',
+                  rate < -0.05 ? '▼' : rate > 0.05 ? '▲' : '→')
         ]) : null,
-        projection ? el('div', { class: 'stat-row', style: 'margin-top:10px' }, [
-          statBox('Est. to Target', `${projection.weeks} weeks`),
-          statBox('Est. Date', projection.dateStr)
+
+        quality ? el('div', { style: 'margin-top:14px' }, [
+          el('div', { class: 'row-between' }, [
+            el('span', { class: 'dim', style: 'font-size:12.5px', text: 'Trend quality' }),
+            el('span', {
+              class: `tag ${quality.level === 'GOOD' ? 'tag-accent' : quality.level === 'FAIR' ? 'tag-warn' : ''}`.trim(),
+              text: quality.level === 'INSUFFICIENT' ? 'NOT ENOUGH DATA' : quality.level
+            })
+          ]),
+          el('p', { class: 'dim', style: 'font-size:12px;margin-top:6px;line-height:1.45', text: quality.note })
         ]) : null,
-        rate == null && !projection ? el('p', { class: 'dim', style: 'margin-top:10px', text: 'Not enough data for trend analysis. Log more weigh-ins.' }) : null
+
+        projection ? el('div', { style: 'margin-top:14px' }, [
+          el('p', { class: 'eyebrow', text: 'Trend-based estimate' }),
+          el('div', { class: 'stat-row', style: 'margin-top:8px' }, [
+            statBox('Weeks to target', `${projection.weeks}`),
+            statBox('Around', projection.dateStr)
+          ]),
+          el('p', { class: 'dim', style: 'font-size:12px;margin-top:8px;line-height:1.45',
+            text: 'A projection of the current trend, not a promise. It moves as your rate changes.' })
+        ]) : (rate != null && rate < 0 ? el('p', { class: 'dim', style: 'font-size:12.5px;margin-top:12px',
+            text: 'Not enough stable trend data for a meaningful projection yet.' }) : null),
+
+        rate == null ? el('p', { class: 'dim', style: 'margin-top:10px',
+          text: 'Not enough data for trend analysis. Keep logging your weight.' }) : null
       ]));
     }
 
     /* Milestones */
     container.appendChild(el('section', { class: 'card' }, [
       el('p', { class: 'eyebrow', text: 'Milestones' }),
+      goal.inRange ? el('div', { class: 'card', style: 'margin:8px 0;border-color:var(--accent);background:var(--accent-dim)' }, [
+        el('p', { style: 'font-weight:800;letter-spacing:.06em', text: 'TARGET RANGE REACHED' }),
+        el('p', { class: 'dim', style: 'font-size:12.5px;margin-top:4px',
+          text: `Your trend weight is inside ${goal.rangeMin}–${goal.rangeMax} ${units}. Holding here is the goal — losing further is a choice, not a requirement.` })
+      ]) : null,
       el('div', { class: 'milestones', style: 'display:flex;gap:12px;flex-wrap:wrap;margin-top:8px' },
         store.getMilestones().map(m => {
           const reached = goal.current != null && goal.current <= m;
           const isTarget = m === goal.target;
           return el('div', { class: `milestone-dot${reached ? ' reached' : ''}`, style: 'display:flex;flex-direction:column;align-items:center;gap:4px' }, [
             el('div', { style: 'width:44px;height:44px;border-radius:50%;border:2px solid ' + (reached ? 'var(--accent)' : 'var(--line)') + ';background:' + (reached ? 'var(--accent)' : 'transparent') + ';display:flex;align-items:center;justify-content:center' },
-              reached ? icon('check') : el('span', { style: 'font-weight:800;color:var(--text-3)', text: `${m}` })),
+              reached ? el('span', { html: icon('check'), style: 'display:flex' })
+                        : el('span', { style: 'font-weight:800;color:var(--text-3)', text: `${m}` })),
             el('span', { style: 'font-size:11px;color:var(--text-3)', text: `${m} ${units}` }),
             isTarget && el('span', { class: 'tag tag-accent', style: 'font-size:9px;margin-top:2px', text: 'Primary' })
           ]);

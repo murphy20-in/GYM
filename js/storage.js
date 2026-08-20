@@ -526,14 +526,122 @@ export function dailyWeights() {
 }
 
 /** Centred moving average — the trend line, which is what actually matters. */
-export function movingAverage(series, window = 7) {
-  return series.map((point, i) => {
-    const from = Math.max(0, i - Math.floor(window / 2));
-    const to = Math.min(series.length, from + window);
-    const slice = series.slice(from, to);
-    const avg = slice.reduce((n, p) => n + p.kg, 0) / slice.length;
-    return { ...point, kg: Math.round(avg * 100) / 100 };
-  });
+/**
+ * Causal exponentially-weighted trend.
+ *
+ * The previous implementation used a *centred* window, which reads well in the
+ * middle of a chart but is wrong exactly where it matters: at the most recent
+ * point there is no future data, so the window collapses to a couple of trailing
+ * samples and the headline "trend weight" jumps with the last weigh-in — the
+ * very noise a trend is supposed to remove.
+ *
+ * This uses only past data (so today's value never changes retroactively) and
+ * weights recent days more heavily. Gaps are handled by decaying on elapsed
+ * days rather than on sample count, so a week without weighing does not let a
+ * single new reading yank the trend.
+ *
+ * @param {Array<{date,kg}>} series chronological daily readings
+ * @param {number} halfLife days for a reading's influence to halve
+ */
+export function movingAverage(series, halfLife = 7) {
+  if (!series.length) return [];
+  const out = [];
+  let trend = series[0].kg;
+  let prev = dateOf(series[0].date);
+
+  for (const point of series) {
+    const now = dateOf(point.date);
+    const gapDays = Math.max(0, (now - prev) / 86400000);
+    /* alpha rises with the gap: the longer since the last reading, the more
+       weight the new one deserves */
+    const alpha = gapDays === 0 ? 1 - Math.pow(0.5, 1 / halfLife)
+                                : 1 - Math.pow(0.5, gapDays / halfLife);
+    trend = trend + alpha * (point.kg - trend);
+    prev = now;
+    out.push({ ...point, kg: Math.round(trend * 100) / 100 });
+  }
+  return out;
+}
+
+const dateOf = iso => {
+  const [y, m, d] = String(iso).split('-').map(Number);
+  return new Date(y, (m || 1) - 1, d || 1).getTime();
+};
+
+/** The single number to show as "trend weight" — the latest causal estimate. */
+export function trendWeight() {
+  const trend = movingAverage(dailyWeights());
+  return trend.length ? trend[trend.length - 1].kg : null;
+}
+
+/**
+ * Rate of change in kg/week, from a least-squares fit over a recent window.
+ *
+ * Fitting the *whole* history (as this used to) reports a lifetime average: a
+ * fast start followed by a plateau keeps showing the old rate indefinitely.
+ * Only the recent window answers "what is happening now".
+ */
+export function trendRate(days = 21) {
+  /* Regress the *raw* readings, not the smoothed line. Least squares already
+     rejects noise, whereas fitting the EWMA inherits its lag: a genuine plateau
+     read as -0.16 kg/week purely because the smoothed line was still catching
+     up to the flat data underneath it. */
+  const pts0 = dailyWeights();
+  if (pts0.length < 4) return null;
+
+  const cutoff = Date.now() - days * 86400000;
+  let pts = pts0.filter(p => dateOf(p.date) >= cutoff);
+  /* fall back to the most recent points when the window is sparse */
+  if (pts.length < 4) pts = pts0.slice(-4);
+
+  const spanDays = (dateOf(pts[pts.length - 1].date) - dateOf(pts[0].date)) / 86400000;
+  if (spanDays < 5) return null;
+
+  /* least squares on (day offset, kg) */
+  const x0 = dateOf(pts[0].date);
+  const xs = pts.map(p => (dateOf(p.date) - x0) / 86400000);
+  const ys = pts.map(p => p.kg);
+  const n = xs.length;
+  const mx = xs.reduce((a, b) => a + b, 0) / n;
+  const my = ys.reduce((a, b) => a + b, 0) / n;
+  let num = 0, den = 0;
+  for (let i = 0; i < n; i++) { num += (xs[i] - mx) * (ys[i] - my); den += (xs[i] - mx) ** 2; }
+  if (!den) return null;
+
+  const perDay = num / den;
+  return Math.round(perDay * 7 * 100) / 100;
+}
+
+/**
+ * How much the trend can be trusted, so a two-day line is never presented with
+ * the same authority as two months of data.
+ * Returns { level, n, spanDays, scatter } with level GOOD | FAIR | INSUFFICIENT.
+ */
+export function trendQuality(days = 28) {
+  const series = dailyWeights();
+  const cutoff = Date.now() - days * 86400000;
+  const recent = series.filter(p => dateOf(p.date) >= cutoff);
+  const n = recent.length;
+  const spanDays = n > 1
+    ? Math.round((dateOf(recent[n - 1].date) - dateOf(recent[0].date)) / 86400000) : 0;
+
+  if (n < 5 || spanDays < 10) {
+    return { level: 'INSUFFICIENT', n, spanDays, scatter: null,
+             note: 'Keep logging your weight to establish a reliable trend.' };
+  }
+
+  /* typical distance of a raw reading from the trend line */
+  const trend = movingAverage(series).filter(p => dateOf(p.date) >= cutoff);
+  const resid = recent.map((p, i) => Math.abs(p.kg - (trend[i]?.kg ?? p.kg)));
+  const scatter = Math.round((resid.reduce((a, b) => a + b, 0) / resid.length) * 100) / 100;
+
+  /* density matters as much as count: 20 readings over 28 days beats 20 in 5 */
+  const density = n / Math.max(1, spanDays);
+  const level = (n >= 12 && density >= 0.5 && scatter <= 0.8) ? 'GOOD' : 'FAIR';
+  return { level, n, spanDays, scatter,
+           note: level === 'GOOD'
+             ? `${n} weigh-ins over ${spanDays} days.`
+             : `${n} weigh-ins over ${spanDays} days — log more often to sharpen this.` };
 }
 
 const RANGE_DAYS = { '7D': 7, '30D': 30, '3M': 90, '6M': 182, '1Y': 365, 'ALL': Infinity };
@@ -575,13 +683,25 @@ export function weightGoal() {
   if (current == null || start == null) {
     return { current: null, start: null, target, remaining: null, pct: 0, trendWeight: null };
   }
-  const series = dailyWeights();
-  const trend = movingAverage(series);
-  const trendWeight = trend.length ? trend[trend.length - 1].kg : current;
-  const remaining = Math.max(0, Math.round((current - target) * 10) / 10);
+  const trend = movingAverage(dailyWeights());
+  const tw = trend.length ? trend[trend.length - 1].kg : current;
+
+  /* Progress and distance-to-target both follow the trend, not the last
+     reading: a single heavy morning should not move the goal bar. */
+  const remaining = Math.max(0, Math.round((tw - target) * 10) / 10);
   const span = start - target;
-  const pct = span <= 0 ? 100 : Math.max(0, Math.min(100, Math.round(((start - trendWeight) / span) * 100)));
-  return { current, start, target, remaining, pct, lost: Math.round((start - current) * 10) / 10, trendWeight };
+  const pct = span <= 0 ? 100 : Math.max(0, Math.min(100, Math.round(((start - tw) / span) * 100)));
+
+  const s2 = getSettings();
+  const inRange = tw <= Number(s2.targetMax) && tw >= Number(s2.targetMin);
+
+  return {
+    current, start, target, remaining, pct,
+    lost: Math.round((start - tw) * 10) / 10,
+    trendWeight: tw,
+    inRange,
+    rangeMin: Number(s2.targetMin), rangeMax: Number(s2.targetMax)
+  };
 }
 
 /* ---------- day log: meals and habits ---------- */
@@ -1061,6 +1181,105 @@ export function workoutStreak() {
   return { current, longest };
 }
 
+
+/* ---------- data quality ---------- */
+
+/**
+ * Surface gaps and suspect entries rather than letting them quietly skew the
+ * analytics. Every finding names what to do about it; nothing is auto-corrected,
+ * because guessing at a user's training log is worse than reporting a gap.
+ */
+export function dataQuality(days = 30) {
+  const findings = [];
+  const today = dateKey();
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - days);
+  const from = dateKey(cutoff);
+
+  /* --- weigh-ins --- */
+  const weights = allWeights().filter(w => w.date >= from);
+  const byDay = new Set(weights.map(w => w.date));
+  let expected = 0, missing = 0;
+  const cursor = new Date(cutoff);
+  while (dateKey(cursor) <= today) {
+    expected++;
+    if (!byDay.has(dateKey(cursor))) missing++;
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  if (expected && missing > expected * 0.34) {
+    findings.push({
+      kind: 'weight', severity: missing > expected * 0.6 ? 'high' : 'low',
+      label: `${missing} days without a weigh-in`,
+      detail: 'Trend accuracy improves quickly with more frequent weighing.',
+      action: { label: 'Add past data', href: '#/backfill' }
+    });
+  }
+
+  const odd = weights.filter(w => w.kg < 30 || w.kg > 300);
+  if (odd.length) {
+    findings.push({
+      kind: 'weight', severity: 'high',
+      label: `${odd.length} weigh-in${odd.length === 1 ? '' : 's'} outside a plausible range`,
+      detail: `Check ${odd.slice(0, 3).map(w => `${w.date} (${w.kg})`).join(', ')} — a missing decimal point is the usual cause.`,
+      action: { label: 'Review history', href: '#/analytics?tab=weight' }
+    });
+  }
+
+  /* large single-day jumps suggest a typo rather than physiology */
+  const daily = dailyWeights().filter(w => w.date >= from);
+  const jumps = [];
+  for (let i = 1; i < daily.length; i++) {
+    const delta = Math.abs(daily[i].kg - daily[i - 1].kg);
+    const gap = Math.max(1, (dateOf(daily[i].date) - dateOf(daily[i - 1].date)) / 86400000);
+    if (delta / gap > 2.5) jumps.push(daily[i]);
+  }
+  if (jumps.length) {
+    findings.push({
+      kind: 'weight', severity: 'low',
+      label: `${jumps.length} unusually large day-to-day change${jumps.length === 1 ? '' : 's'}`,
+      detail: `Worth confirming ${jumps.slice(0, 3).map(w => w.date).join(', ')} was entered correctly.`,
+      action: { label: 'Review history', href: '#/analytics?tab=weight' }
+    });
+  }
+
+  /* --- sessions --- */
+  let partial = 0, noSets = 0;
+  for (const [key, session] of Object.entries(allSessions())) {
+    const [date, dayId] = key.split('|');
+    if (date < from) continue;
+    const day = WEEK.find(d => d.id === dayId);
+    if (!day) continue;
+    const ids = exercisesOf(day);
+    const entries = Object.values(session.ex || {});
+    const done = entries.filter(e => e.done).length;
+    if (done > 0 && done < ids.length) partial++;
+    const logged = entries.flatMap(e => e.sets.filter(x => x.done));
+    if (done > 0 && logged.every(x => !Number(x.weight))) noSets++;
+  }
+  if (partial) {
+    findings.push({
+      kind: 'workout', severity: 'low',
+      label: `${partial} partly finished session${partial === 1 ? '' : 's'}`,
+      detail: 'These count toward adherence at the fraction completed, not as whole workouts.',
+      action: { label: 'Session history', href: '#/sessions' }
+    });
+  }
+  if (noSets) {
+    findings.push({
+      kind: 'workout', severity: 'low',
+      label: `${noSets} session${noSets === 1 ? '' : 's'} completed without weights`,
+      detail: 'Volume, records and strength trends need a weight on each set.',
+      action: { label: 'Session history', href: '#/sessions' }
+    });
+  }
+
+  return {
+    findings,
+    clean: findings.length === 0,
+    high: findings.filter(f => f.severity === 'high').length,
+    windowDays: days
+  };
+}
+
 /* ---------- data management ---------- */
 
 export async function exportData() {
@@ -1229,24 +1448,22 @@ export function getMeasurementsStats() {
 }
 
 /* ---------- weight analytics helpers ---------- */
+/**
+ * Current rate of change in kg/week.
+ * Kept as the historical name; the calculation now fits a recent window rather
+ * than averaging the entire history, which reported a lifetime rate long after
+ * the trend had changed.
+ */
 export function getWeightLossRate() {
-  const series = dailyWeights();
-  if (series.length < 5) return null;
-  const trend = movingAverage(series);
-  if (trend.length < 5) return null;
-  
-  const latestTrend = trend[trend.length - 1];
-  const firstTrend = trend[0];
-  const dateDiffMs = new Date(latestTrend.date) - new Date(firstTrend.date);
-  const weeks = dateDiffMs / (1000 * 60 * 60 * 24 * 7);
-  if (weeks < 1) return null;
-  
-  const totalChange = latestTrend.kg - firstTrend.kg;
-  const ratePerWeek = totalChange / weeks;
-  return Math.round(ratePerWeek * 100) / 100;
+  return trendRate(21);
 }
 
 export function getGoalProjection() {
+  /* A projection built on a noisy two-week line is false precision, so it is
+     withheld until the trend itself is trustworthy. */
+  const quality = trendQuality();
+  if (quality.level === 'INSUFFICIENT') return null;
+
   const rate = getWeightLossRate();
   if (rate == null || rate >= 0) return null;
   

@@ -49,7 +49,11 @@ export function view(params, app) {
       el('div', { class: 'metric-row' }, [
         el('div', { class: 'metric' }, [
           el('b', { text: goalNow.current != null ? `${goalNow.current}` : '—' }),
-          el('span', { text: `Current ${settings.units}` })
+          el('span', { text: `Scale ${settings.units}` })
+        ]),
+        el('div', { class: 'metric' }, [
+          el('b', { text: goalNow.trendWeight != null ? `${goalNow.trendWeight}` : '—' }),
+          el('span', { text: `Trend ${settings.units}` })
         ]),
         el('div', { class: 'metric' }, [
           el('b', { text: goalNow.remaining != null ? `${goalNow.remaining}` : '—' }),
@@ -82,6 +86,17 @@ export function view(params, app) {
             el('div', { class: 'big-metric' }, [
               el('strong', { text: String(goal.current) }),
               el('span', { text: settings.units })
+            ]),
+            el('div', { class: 'row-between', style: 'margin-top:8px' }, [
+              el('span', { class: 'dim', style: 'font-size:12.5px',
+                text: goal.trendWeight != null ? `Trend ${goal.trendWeight} ${settings.units}` : '' }),
+              (() => {
+                const r = store.getWeightLossRate();
+                return el('span', {
+                  class: r != null && r < -0.05 ? 'tag tag-accent' : 'tag',
+                  text: r == null ? 'Trend building' : `${r > 0 ? '+' : ''}${r} ${settings.units}/wk`
+                });
+              })()
             ]),
             el('div', { class: 'row-between', style: 'margin-top:12px' }, [
               el('span', { class: 'dim', style: 'font-size:12.5px', text: `Start ${goal.start} ${settings.units}` }),
@@ -318,12 +333,12 @@ function generateInsights(breakdown, goal, weights, log, habits, plan, targets) 
       if (rate < -0.2) {
         insights.push({
           title: 'Weight Trend',
-          detail: `7-day trend is ${rate} kg/week — moving toward target. Keep the current routine consistent.`
+          detail: `Your trend is ${rate} kg/week over the last three weeks — moving toward target. Keep the routine consistent.`
         });
       } else if (rate > 0.2) {
         insights.push({
           title: 'Weight Trend',
-          detail: `7-day trend is +${rate} kg/week — trending up. Review nutrition adherence and check-in consistency.`
+          detail: `Your trend is +${rate} kg/week over the last three weeks. Worth reviewing nutrition adherence and weigh-in consistency.`
         });
       } else {
         insights.push({

@@ -476,3 +476,13 @@
   border: 1px solid var(--line-soft);
   min-height: var(--tap);
 }
+
+/* Reached milestones must not rely on colour alone (a11y): the tick is the
+   non-colour signal, so it has to actually render at a usable size. */
+.milestone-dot svg {
+  width: 20px;
+  height: 20px;
+  stroke-width: 3;
+  color: var(--accent-ink, #12030a);
+}
+.milestone-dot.reached span { color: var(--accent-ink, #12030a); }
