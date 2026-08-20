@@ -1,4 +1,8 @@
-/* storage.js — all persistence. localStorage only, no backend, no accounts.
+/* storage.js — all persistence. Local only, no backend, no accounts.
+ *
+ * Data lives in IndexedDB (see db.js), hydrated into memory at boot so every
+ * view can keep reading synchronously. localStorage is mirrored alongside as a
+ * rollback path and used as the fallback when IndexedDB is unavailable.
  *
  * Shape:
  *   gym.v1.settings  { name, goal, experience, units, defaultSets, ... }
@@ -11,7 +15,8 @@
 
 import { MEAL_PLAN, DEFAULT_HABITS, SCORE_WEIGHTS, TARGET_RANGE } from './data/plan.js';
 import { WEEK, dayFor, exercisesOf } from './data/workouts.js';
-import { getAllPhotos, importPhotos, clearAllPhotos } from './db.js';
+import { getAllPhotos, importPhotos, clearAllPhotos, readAllDocs, writeDoc, writeDocs, saveBackup } from './db.js';
+import { SCHEMA_VERSION, DOCS, DOC_NAMES, inspectBackup } from './data/schema.js';
 
 const K = {
   settings: 'gym.v1.settings',
@@ -50,29 +55,167 @@ const DEFAULTS = {
   reduceMotion: false
 };
 
-/* ---------- low level ---------- */
+/* ---------- low level: write-through cache over IndexedDB ----------
+ *
+ * Every view reads synchronously (store.getSettings(), store.dailyBreakdown()).
+ * Rather than turn ~15 views async, the whole dataset is hydrated into memory
+ * once at boot: reads stay synchronous and instant, writes update memory and
+ * are flushed to IndexedDB asynchronously.
+ *
+ * Reads hand back the live cached object rather than a copy. Every mutation
+ * path in this module is followed by a write() of the same document, so this is
+ * safe — and it removes a JSON.parse of the entire session history from every
+ * single read (yearBreakdown alone performed 365 of them).
+ */
 
-let memoryFallback = {};
+let cache = null;              /* null until hydrate() completes */
+let usingIDB = false;
+let mirrorToLocal = true;      /* keep localStorage in sync for one release */
 let warned = false;
 
-function read(key, fallback) {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : structuredClone(fallback);
-  } catch (err) {
-    return structuredClone(memoryFallback[key] ?? fallback);
+const dirty = new Set();
+let flushTimer = 0;
+let lastWriteError = null;
+
+const META_KEY = 'gym.meta';
+
+const DOC_KEYS = Object.values(DOCS).map(d => d.key);
+
+function localSnapshot() {
+  const out = {};
+  for (const key of DOC_KEYS) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw != null) out[key] = JSON.parse(raw);
+    } catch { /* unreadable key — treated as absent */ }
   }
+  return out;
+}
+
+function read(key, fallback) {
+  if (cache && key in cache && cache[key] != null) return cache[key];
+  /* Before hydration (or for a key never written) fall back to localStorage so
+     nothing breaks if a view somehow renders early. */
+  if (!cache) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw != null) return JSON.parse(raw);
+    } catch { /* ignore */ }
+  }
+  return structuredClone(fallback);
 }
 
 function write(key, value) {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch (err) {
-    /* private mode or a full quota — keep the session usable in memory */
-    memoryFallback[key] = value;
-    if (!warned) { warned = true; console.warn('Storage unavailable; this session will not persist.', err); }
+  if (!cache) cache = {};
+  cache[key] = value;
+
+  if (mirrorToLocal) {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch (err) {
+      /* Quota or private mode. IndexedDB is the real store, so this is only a
+         lost rollback path — not lost data. Stop retrying. */
+      mirrorToLocal = false;
+      if (!warned) { warned = true; console.warn('localStorage mirror disabled:', err); }
+    }
+  }
+
+  if (usingIDB) {
+    dirty.add(key);
+    clearTimeout(flushTimer);
+    flushTimer = setTimeout(flush, 120);
   }
   emit();
+}
+
+async function flush() {
+  if (!usingIDB || !dirty.size) return;
+  const batch = {};
+  for (const key of dirty) batch[key] = cache[key];
+  dirty.clear();
+  try {
+    await writeDocs(batch);
+    lastWriteError = null;
+  } catch (err) {
+    /* Never swallow a failed write: the user needs to know their last entry
+       may not have persisted, and that a backup is the safe next step. */
+    lastWriteError = err;
+    console.error('Could not save to local database:', err);
+    for (const key of Object.keys(batch)) dirty.add(key);
+    emit();
+  }
+}
+
+/** Surfaced in Settings so a persistent failure is visible rather than silent. */
+export const getWriteError = () => lastWriteError;
+export const flushNow = () => flush();
+export const storageBackend = () => (usingIDB ? 'indexeddb' : mirrorToLocal ? 'localstorage' : 'memory');
+
+/* ---------- hydration + migration ---------- */
+
+/**
+ * Load everything into memory, migrating from localStorage on first run.
+ * Must be awaited before the first render.
+ */
+export async function hydrate() {
+  let docs = {};
+  try {
+    docs = await readAllDocs();
+    usingIDB = true;
+  } catch (err) {
+    console.warn('IndexedDB unavailable; continuing on localStorage.', err);
+    usingIDB = false;
+  }
+
+  const local = localSnapshot();
+  const hasIDB = Object.keys(docs).length > 0;
+  const hasLocal = Object.keys(local).length > 0;
+
+  if (usingIDB && !hasIDB && hasLocal) {
+    try {
+      await migrateFromLocal(local);
+      docs = await readAllDocs();
+    } catch (err) {
+      /* Migration failed — stay on the localStorage copy, which is untouched. */
+      console.error('Migration to IndexedDB failed; using localStorage.', err);
+      usingIDB = false;
+      cache = local;
+      return { backend: 'localstorage', migrated: false, error: String(err) };
+    }
+  }
+
+  cache = usingIDB && Object.keys(docs).length ? docs : local;
+  return { backend: storageBackend(), migrated: usingIDB && hasLocal && !hasIDB };
+}
+
+/**
+ * Copy localStorage into IndexedDB.
+ * Order matters: snapshot first, write in one transaction, verify, only then
+ * record the migration. localStorage is never cleared here, so a failure at any
+ * point leaves the original data intact and readable.
+ */
+async function migrateFromLocal(local) {
+  await saveBackup('pre-indexeddb-migration', {
+    schemaVersion: SCHEMA_VERSION,
+    createdAt: new Date().toISOString(),
+    docs: local
+  });
+
+  await writeDocs(local);
+
+  const after = await readAllDocs();
+  for (const [key, value] of Object.entries(local)) {
+    const before = JSON.stringify(value);
+    const now = JSON.stringify(after[key]);
+    if (before !== now) throw new Error(`Verification failed for ${key}`);
+  }
+
+  await writeDoc(META_KEY, {
+    schemaVersion: SCHEMA_VERSION,
+    migratedAt: new Date().toISOString(),
+    from: 'localStorage'
+  });
+  return true;
 }
 
 /* ---------- change notification ---------- */
@@ -933,7 +1076,7 @@ export async function exportData() {
     console.warn('Progress photos could not be read for export:', err);
   }
   return JSON.stringify({
-    version: 2, exportedAt: new Date().toISOString(),
+    schemaVersion: SCHEMA_VERSION, version: 2, exportedAt: new Date().toISOString(),
     settings: getSettings(),
     sessions: allSessions(),
     prs: allPRs(),
@@ -944,19 +1087,43 @@ export async function exportData() {
   }, null, 2);
 }
 
-export async function importData(json) {
-  const data = JSON.parse(json);
-  if (!data || typeof data !== 'object') throw new Error('Not a valid backup file.');
-  if (data.settings) write(K.settings, data.settings);
-  if (data.sessions) write(K.sessions, data.sessions);
-  if (data.prs) write(K.prs, data.prs);
-  if (data.weights) write(K.weights, data.weights);
-  if (data.days) write(K.days, data.days);
-  if (data.measurements) write(K.measurements, data.measurements);
-  if (data.progressPhotos) {
-    await importPhotos(data.progressPhotos);
+/**
+ * Parse and validate a backup without applying it.
+ * Returns the inspection report plus the parsed payload, so the caller can show
+ * a preview and only then commit.
+ */
+export function previewImport(json) {
+  let data;
+  try {
+    data = JSON.parse(json);
+  } catch {
+    return { report: { ok: false, records: {}, issues: [], fatal: ['That file is not valid JSON.'], photos: 0 }, data: null };
   }
-  return true;
+  return { report: inspectBackup(data), data };
+}
+
+/**
+ * Apply a previously previewed backup.
+ * The current dataset is snapshotted first, so a regretted import is
+ * recoverable rather than final.
+ */
+export async function importData(json) {
+  const { report, data } = typeof json === 'string' ? previewImport(json) : { report: inspectBackup(json), data: json };
+  if (!report.ok) throw new Error(report.fatal[0] || 'That backup could not be read.');
+
+  await saveBackup('pre-import', {
+    schemaVersion: SCHEMA_VERSION,
+    createdAt: new Date().toISOString(),
+    docs: Object.fromEntries(DOC_NAMES.map(n => [DOCS[n].key, read(DOCS[n].key, null)]).filter(([, v]) => v != null))
+  }).catch(() => { /* a missing safety net must not block a valid import */ });
+
+  for (const name of DOC_NAMES) {
+    if (data[name] !== undefined) write(DOCS[name].key, data[name]);
+  }
+  if (Array.isArray(data.progressPhotos)) await importPhotos(data.progressPhotos);
+
+  await flush();
+  return report;
 }
 
 /** Scoped reset: 'workout' | 'weight' | 'habits' | 'nutrition' | 'all'. */

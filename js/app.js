@@ -8,6 +8,7 @@
 import { el, icon } from './ui.js';
 import { mountTimerFab } from './timer.js';
 import { requestPersistence } from './persist.js';
+import * as store from './storage.js';
 import * as dashboard from './views/dashboard.js';
 import * as workouts from './views/workouts.js';
 import * as nutrition from './views/nutrition.js';
@@ -175,20 +176,50 @@ function registerSW() {
 
 function applyMotionPreference() {
   try {
-    const reduced = JSON.parse(localStorage.getItem('gym.v1.settings') || '{}').reduceMotion;
+    const reduced = store.getSettings().reduceMotion;
     document.documentElement.dataset.reduceMotion = reduced ? '1' : '0';
   } catch { document.documentElement.dataset.reduceMotion = '0'; }
 }
 
-applyMotionPreference();
-window.addEventListener('gym:settings', applyMotionPreference);
+/** Shown while the database is being read, so the first paint is never blank. */
+function bootSplash() {
+  const splash = el('div', { class: 'boot-splash', role: 'status', 'aria-live': 'polite' }, [
+    el('div', { class: 'boot-mark' }),
+    el('p', { class: 'boot-text', text: 'Loading your data…' })
+  ]);
+  document.body.appendChild(splash);
+  return () => splash.remove();
+}
 
-buildShell();
-mountTimerFab();
-window.addEventListener('hashchange', render);
-render();
-registerSW();
+async function boot() {
+  const done = bootSplash();
+  try {
+    /* Reads must not begin until the store is hydrated, or the first render
+       would show an empty profile and then flicker into the real data. */
+    await store.hydrate();
+  } catch (err) {
+    console.error('Could not open local storage:', err);
+  }
+  done();
 
-/* Ask the browser to keep this data out of automatic eviction. Best-effort:
-   it is a no-op where unsupported, and only prompts once. */
-requestPersistence();
+  applyMotionPreference();
+  window.addEventListener('gym:settings', applyMotionPreference);
+
+  buildShell();
+  mountTimerFab();
+  window.addEventListener('hashchange', render);
+  render();
+  registerSW();
+
+  /* Ask the browser to keep this data out of automatic eviction. Best-effort:
+     it is a no-op where unsupported, and only prompts once. */
+  requestPersistence();
+
+  /* A pending write must not be lost to a backgrounded tab or a closed app. */
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') store.flushNow();
+  });
+  window.addEventListener('pagehide', () => store.flushNow());
+}
+
+boot();

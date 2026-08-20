@@ -3,6 +3,7 @@
 import { el, toast, sheet, icon } from '../ui.js';
 import { MEAL_PLAN, DEFAULT_HABITS, TARGET_RANGE, SCORE_WEIGHTS } from '../data/plan.js';
 import * as store from '../storage.js';
+import { DOCS } from '../data/schema.js';
 import { storageStatus, requestPersistence, formatBytes, isInstalled, markExported, lastExport } from '../persist.js';
 
 const GOALS = ['Muscle Gain', 'Strength', 'Fat Loss', 'General Fitness'];
@@ -235,13 +236,17 @@ export function view(params, app) {
     fileInput.addEventListener('change', async () => {
       const file = fileInput.files?.[0];
       if (!file) return;
+      let text = '';
       try {
-        await store.importData(await file.text());
-        toast('Data restored');
-        paint();
+        text = await file.text();
       } catch {
         toast('Could not read that file', 'close');
+        fileInput.value = '';
+        return;
       }
+      /* Nothing is written until the preview is confirmed — an import replaces
+         a training history, so it must never happen on a single tap. */
+      showImportPreview(text, paint);
       fileInput.value = '';
     });
 
@@ -337,6 +342,23 @@ async function paintDurability(section) {
   section.replaceChildren();
   section.appendChild(el('h3', { class: 'eyebrow', text: 'Storage durability' }));
 
+  /* A failed write must never be invisible — the user needs to know their last
+     entry may not have landed, and that exporting is the safe next step. */
+  const writeError = store.getWriteError();
+  if (writeError) {
+    section.appendChild(el('div', { class: 'card', style: 'border-color:var(--danger)' }, [
+      el('p', { class: 'eyebrow', style: 'color:var(--danger)', text: '⚠ Could not save' }),
+      el('p', { class: 'dim', style: 'font-size:12.5px;line-height:1.5;margin-top:6px',
+        text: 'A recent change may not have been written to this device. Export your data now, then reload the app.' })
+    ]));
+  }
+
+  const backend = store.storageBackend();
+  section.appendChild(el('p', { class: 'dim', style: 'font-size:12px',
+    text: backend === 'indexeddb' ? 'Stored in IndexedDB'
+      : backend === 'localstorage' ? 'Stored in localStorage (IndexedDB unavailable)'
+      : 'In memory only — this session will not persist' }));
+
   const ok = st.persisted;
   section.appendChild(el('div', { class: 'row', style: 'gap:10px;align-items:flex-start' }, [
     el('span', { class: ok ? 'tag tag-accent' : 'tag tag-warn', text: ok ? 'PROTECTED' : 'BEST-EFFORT' }),
@@ -373,6 +395,71 @@ async function paintDurability(section) {
       : backup.days === 0 ? 'Backed up today'
       : `Last backup ${backup.days} day${backup.days === 1 ? '' : 's'} ago`
   }));
+}
+
+/**
+ * Show exactly what a backup would bring in before anything is written.
+ * Counts come from the validator, so what is listed is what will land.
+ */
+function showImportPreview(text, onDone) {
+  const { report } = store.previewImport(text);
+
+  if (!report.ok) {
+    sheet('Import failed', el('div', { class: 'stack' }, [
+      el('p', { class: 'muted', text: report.fatal[0] || 'That backup could not be read.' }),
+      el('p', { class: 'dim', style: 'font-size:12.5px',
+        text: 'Your existing data has not been touched.' }),
+      el('button', { class: 'btn btn-block', type: 'button', text: 'Close', onclick: () => ref.close() })
+    ]));
+    return;
+  }
+
+  const rows = Object.entries(report.records)
+    .filter(([, n]) => n > 0)
+    .map(([name, n]) => el('div', { class: 'pr-row' }, [
+      el('span', { class: 'nm', text: DOCS[name].label }),
+      el('span', { class: 'v', text: String(n) })
+    ]));
+  if (report.photos) {
+    rows.push(el('div', { class: 'pr-row' }, [
+      el('span', { class: 'nm', text: 'Progress photos' }),
+      el('span', { class: 'v', text: String(report.photos) })
+    ]));
+  }
+
+  const body = el('div', { class: 'stack' }, [
+    el('p', { class: 'eyebrow', text: 'Records found' }),
+    rows.length ? el('div', {}, rows) : el('p', { class: 'muted', text: 'This backup contains no records.' }),
+
+    report.issues.length ? el('div', { class: 'card', style: 'border-color:rgba(255,176,32,.35)' }, [
+      el('p', { class: 'eyebrow', style: 'color:var(--warn)', text: `${report.issues.length} entr${report.issues.length === 1 ? 'y' : 'ies'} will be skipped` }),
+      el('ul', { class: 'list', style: 'margin-top:8px' },
+        report.issues.slice(0, 5).map(i => el('li', { class: 'cue cue-warn' }, [
+          el('i', { text: '⚠' }), el('span', { text: i })
+        ])))
+    ]) : null,
+
+    el('p', { class: 'dim', style: 'font-size:12.5px;line-height:1.5',
+      text: 'This replaces the matching data on this device. A snapshot of your current data is saved first, so this can be undone from a backup.' }),
+
+    el('button', {
+      class: 'btn btn-primary btn-lg btn-block', type: 'button', text: 'IMPORT',
+      onclick: async () => {
+        try {
+          const applied = await store.importData(text);
+          const total = Object.values(applied.records).reduce((a, b) => a + b, 0);
+          toast(`${total} records restored`);
+          ref.close();
+          onDone?.();
+        } catch (err) {
+          toast(String(err.message || err), 'close');
+        }
+      }
+    }),
+    el('button', { class: 'btn btn-ghost btn-block', type: 'button', text: 'Cancel', onclick: () => ref.close() })
+  ]);
+
+  const ref = sheet('Import preview', body);
 }
 
 function priv(text) {
