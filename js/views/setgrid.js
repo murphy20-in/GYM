@@ -71,13 +71,21 @@ export function setGrid(dayId, exercise, opts = {}) {
         onclick: () => {
           const done = !s.done;
           /* tick means "this is what I actually lifted", so freeze the shown values */
-          store.logSet(dayId, exercise.id, i, {
+          const updated = store.logSet(dayId, exercise.id, i, {
             done,
             weight: weight.value === '' ? (done ? Number(lastSet?.weight) || null : null) : Number(weight.value),
             reps: reps.value === '' ? (done ? Number(lastSet?.reps) || settings.defaultReps : null) : Number(reps.value),
             rpe: rpe.value === '' ? null : Number(rpe.value)
           }, count);
-          if (done) { restAfterSet(); navigator.vibrate?.(18); }
+          if (done) {
+            restAfterSet();
+            if (updated.newPR) {
+              toast(`🔥 NEW PR: ${updated.newPR.weight} ${unit} × ${updated.newPR.reps}! (Prev: ${updated.newPR.prevWeight})`, 'check');
+              navigator.vibrate?.([30, 80, 30]);
+            } else {
+              navigator.vibrate?.(18);
+            }
+          }
           paint();
           opts.onChange?.();
         }

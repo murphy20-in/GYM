@@ -70,6 +70,14 @@ export function weighInSheet(kind, opts = {}) {
 
   function save() {
     try {
+      const val = Number(input.value);
+      if (val > seed * 4 && val.toString().length >= 3 && !input.value.includes('.')) {
+        const suggested = val / 10;
+        if (confirm(`Did you mean ${suggested} ${units}?`)) {
+          input.value = String(suggested);
+          return;
+        }
+      }
       const entry = store.addWeight(input.value, kind, new Date(), opts.dayId);
       toast(`${entry.kg} ${units} saved`, 'check');
       ref.close();
@@ -93,7 +101,7 @@ export function sessionWeightNote(checkIn, checkOut) {
     el('p', { class: 'eyebrow', text: 'Session weight change' }),
     el('p', { class: 'delta-value', text: `${sign}${delta} kg` }),
     el('p', { class: 'dim', style: 'font-size:12.5px;line-height:1.45',
-      text: 'This is not necessarily fat loss. Short-term changes reflect hydration, food, glycogen and other factors.' })
+      text: 'Session weight changes are usually influenced by hydration, food, glycogen and fluid loss. Use your longer-term weight trend to evaluate actual weight-loss progress.' })
   ]);
 }
 

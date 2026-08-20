@@ -5,11 +5,11 @@
  */
 
 :root {
-  --c-weight: #7fb2ff;
-  --c-workout: #c6f94b;
-  --c-nutrition: #ffb020;
-  --c-habits: #b48bff;
-  --c-progress: #5fe0c0;
+  --c-weight: #ff1a1a;
+  --c-workout: #ff1a1a;
+  --c-nutrition: #ffaa00;
+  --c-habits: #ff4444;
+  --c-progress: #ff1a1a;
 }
 
 /* domain accents: a hairline edge plus a whisper of tint */
@@ -40,11 +40,11 @@
 .accent-habits::before { background: var(--c-habits); }
 .accent-progress::before { background: var(--c-progress); }
 
-.accent-weight { background: linear-gradient(100deg, rgba(127, 178, 255, .07), transparent 42%), var(--surface); }
-.accent-nutrition { background: linear-gradient(100deg, rgba(255, 176, 32, .07), transparent 42%), var(--surface); }
-.accent-habits { background: linear-gradient(100deg, rgba(180, 139, 255, .07), transparent 42%), var(--surface); }
-.accent-progress { background: linear-gradient(100deg, rgba(95, 224, 192, .07), transparent 42%), var(--surface); }
-.accent-workout { background: linear-gradient(100deg, rgba(198, 249, 75, .07), transparent 42%), var(--surface); }
+.accent-weight { background: linear-gradient(100deg, rgba(255, 26, 26, .07), transparent 42%), var(--surface); }
+.accent-nutrition { background: linear-gradient(100deg, rgba(255, 170, 0, .07), transparent 42%), var(--surface); }
+.accent-habits { background: linear-gradient(100deg, rgba(255, 68, 68, .07), transparent 42%), var(--surface); }
+.accent-progress { background: linear-gradient(100deg, rgba(255, 26, 26, .07), transparent 42%), var(--surface); }
+.accent-workout { background: linear-gradient(100deg, rgba(255, 26, 26, .07), transparent 42%), var(--surface); }
 
 /* ---------- dashboard ---------- */
 
@@ -151,7 +151,7 @@
   border: 1px dashed var(--line);
   text-align: left;
 }
-.check-slot.filled { border-style: solid; border-color: rgba(127, 178, 255, .4); }
+.check-slot.filled { border-style: solid; border-color: rgba(255, 26, 26, .4); }
 .check-slot strong { font-size: 22px; letter-spacing: -.02em; }
 
 .checkin-prompt { margin-bottom: 14px; }
@@ -180,7 +180,7 @@
   display: grid; place-items: center;
   flex: 0 0 auto;
 }
-.milestones li.reached .ms-mark { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.milestones li.reached .ms-mark { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); box-shadow: 0 0 0 1px var(--accent); }
 .milestones li.reached .ms-mark svg { width: 12px; height: 12px; stroke-width: 3.2; }
 
 /* four metrics read better as 2x2 on a phone than 3+1 */
@@ -192,8 +192,8 @@
 .chart { display: block; width: 100%; height: auto; margin-top: 10px; }
 .chart-grid { stroke: var(--line-soft); stroke-width: 1; }
 .chart-axis { fill: var(--text-3); font-size: 7px; font-weight: 600; }
-.chart-target { stroke: var(--accent); stroke-width: 1.2; stroke-dasharray: 4 4; opacity: .7; }
-.chart-target-label { fill: var(--accent); font-size: 7px; font-weight: 700; }
+.chart-target { stroke: var(--target-line); stroke-width: 1.2; stroke-dasharray: 4 4; opacity: .7; }
+.chart-target-label { fill: var(--target-line); font-size: 7px; font-weight: 700; }
 .chart-raw { fill: none; stroke: var(--text-3); stroke-width: 1; opacity: .45; }
 .chart-dot { fill: var(--text-3); opacity: .6; }
 .chart-trend { fill: none; stroke: var(--c-weight); stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
@@ -213,7 +213,7 @@
   border: 1px solid var(--line-soft);
   text-align: left;
 }
-.meal-card.done { border-color: rgba(255, 176, 32, .38); }
+.meal-card.done { border-color: rgba(255, 170, 0, .38); }
 .meal-tick {
   width: 26px; height: 26px;
   border-radius: 9px;
@@ -229,7 +229,7 @@
 
 /* ---------- habits ---------- */
 
-.habit-card.tracked { border-color: rgba(180, 139, 255, .35); }
+.habit-card.tracked { border-color: rgba(255, 68, 68, .35); }
 
 .habit-control { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
 
@@ -277,7 +277,7 @@
   border: 1px solid var(--line);
   text-align: left;
 }
-.type-option[aria-pressed='true'] { border-color: var(--c-habits); background: rgba(180, 139, 255, .12); }
+.type-option[aria-pressed='true'] { border-color: var(--c-habits); background: rgba(255, 68, 68, .12); }
 
 /* ---------- settings rows ---------- */
 
@@ -322,7 +322,7 @@
 }
 .cal-cell.empty { background: transparent; }
 .cal-cell.strong { background: var(--accent); color: var(--accent-ink); }
-.cal-cell.partial { background: rgba(255, 176, 32, .32); color: var(--text); }
+.cal-cell.partial { background: rgba(255, 170, 0, .32); color: var(--text); }
 .cal-cell.rest { background: var(--surface-3); color: var(--text-3); }
 .cal-cell.future { opacity: .35; }
 
@@ -356,4 +356,47 @@
 
 @media (min-width: 900px) {
   .dash-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+}
+
+/* ---------- focus / insights ---------- */
+
+.focus-list {
+  list-style: none;
+  display: grid;
+  gap: 12px;
+}
+
+.focus-item {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 12px;
+  align-items: start;
+  padding: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-sm);
+}
+
+.focus-num {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 800;
+  font-size: 13px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.focus-text strong {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.focus-text p {
+  margin: 0;
 }

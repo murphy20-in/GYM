@@ -17,23 +17,27 @@ import * as detail from './views/detail.js';
 import * as library from './views/library.js';
 import * as progress from './views/progress.js';
 import * as settings from './views/settings.js';
+import * as analytics from './views/analytics.js';
+import * as mindset from './views/mindset.js';
+import * as bodyAnalytics from './views/bodyAnalytics.js';
 
 /* Five destinations only: six or more shrinks each target below a comfortable
    thumb width at 360px. The exercise library and settings live in the top bar,
    which is present on every screen. */
 const NAV = [
-  { href: '#/', label: 'Today', icon: 'home', match: p => p === '/' || p.startsWith('/weight') },
-  { href: '#/workouts', label: 'Workout', icon: 'dumbbell', match: p => p.startsWith('/workout') || p.startsWith('/day') || p.startsWith('/library') || p.startsWith('/exercise') },
-  { href: '#/nutrition', label: 'Nutrition', icon: 'meal', match: p => p.startsWith('/nutrition') },
-  { href: '#/habits', label: 'Habits', icon: 'habit', match: p => p.startsWith('/habits') },
-  { href: '#/progress', label: 'Progress', icon: 'chart', match: p => p.startsWith('/progress') }
+  { href: '#/', label: 'Today', icon: 'home', match: p => p === '/' },
+  { href: '#/workouts', label: 'Workout', icon: 'dumbbell', match: p => p.startsWith('/workout') || p.startsWith('/day') || p.startsWith('/library') || p.startsWith('/exercise') || p.startsWith('/workouts') },
+  { href: '#/analytics', label: 'Analytics', icon: 'chart', match: p => p.startsWith('/analytics') || p === '/weight' },
+  { href: '#/body', label: 'Body', icon: 'book', match: p => p.startsWith('/body') },
+  { href: '#/progress', label: 'Progress', icon: 'scale', match: p => p.startsWith('/progress') },
+  { href: '#/settings', label: 'Settings', icon: 'gear', match: p => p.startsWith('/settings') }
 ];
 
 const ROUTES = [
   { re: /^\/$/, view: dashboard.view, params: () => ({}) },
   /* older links pointed at #/home/:day before the dashboard replaced it */
   { re: /^\/home\/([\w-]+)$/, redirect: m => `#/day/${m[1]}` },
-  { re: /^\/weight$/, view: weight.view, params: () => ({}) },
+  { re: /^\/weight$/, redirect: () => '#/analytics?tab=weight' },
   { re: /^\/nutrition$/, view: nutrition.view, params: () => ({}) },
   { re: /^\/habits$/, view: habits.view, params: () => ({}) },
   { re: /^\/workouts$/, view: workouts.weekView, params: () => ({}) },
@@ -42,7 +46,10 @@ const ROUTES = [
   { re: /^\/exercise\/([\w-]+)$/, view: detail.view, params: m => ({ id: m[1] }) },
   { re: /^\/library$/, view: library.view, params: () => ({}) },
   { re: /^\/progress$/, view: progress.view, params: () => ({}) },
-  { re: /^\/settings$/, view: settings.view, params: () => ({}) }
+  { re: /^\/settings$/, view: settings.view, params: () => ({}) },
+  { re: /^\/analytics$/, view: analytics.view, params: () => ({}) },
+  { re: /^\/mindset$/, view: mindset.view, params: () => ({}) },
+  { re: /^\/body$/, view: bodyAnalytics.view, params: () => ({}) }
 ];
 
 const app = {

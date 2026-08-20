@@ -8,7 +8,7 @@
   padding: 20px;
   border-radius: var(--r-lg);
   background:
-    radial-gradient(130% 110% at 6% 0%, rgba(198, 249, 75, .16), transparent 55%),
+    radial-gradient(130% 110% at 6% 0%, rgba(255, 26, 26, .16), transparent 55%),
     linear-gradient(160deg, var(--surface-2), var(--surface));
   border: 1px solid var(--line-soft);
 }
@@ -81,8 +81,8 @@
 .detail-tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 
 .quickform {
-  background: linear-gradient(160deg, rgba(198, 249, 75, .1), transparent 70%), var(--surface);
-  border: 1px solid rgba(198, 249, 75, .22);
+  background: linear-gradient(160deg, rgba(255, 26, 26, .1), transparent 70%), var(--surface);
+  border: 1px solid rgba(255, 26, 26, .22);
   border-radius: var(--r);
   padding: 15px 16px;
 }
@@ -114,8 +114,8 @@
 .breath-row b { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; }
 
 .safety {
-  border: 1px solid rgba(255, 176, 32, .28);
-  background: linear-gradient(160deg, rgba(255, 176, 32, .08), transparent 68%), var(--surface);
+  border: 1px solid rgba(255, 170, 0, .28);
+  background: linear-gradient(160deg, rgba(255, 170, 0, .08), transparent 68%), var(--surface);
 }
 
 .detail-actions {
@@ -146,7 +146,7 @@
   border-radius: 999px;
   background: var(--surface-3);
 }
-.wm-progress i.done { background: var(--accent); }
+.wm-progress i.done { background: var(--accent); box-shadow: 0 0 6px var(--accent-glow); }
 .wm-progress i.current { background: var(--text-2); }
 
 .setgrid { display: grid; gap: 8px; }
@@ -165,7 +165,7 @@
   color: var(--text-3);
   font-size: 13px;
 }
-.set-row.done > .n { background: var(--accent); color: var(--accent-ink); }
+.set-row.done > .n { background: var(--accent); color: var(--accent-ink); box-shadow: 0 0 6px var(--accent-glow); }
 .set-row input {
   min-height: var(--tap);
   width: 100%;

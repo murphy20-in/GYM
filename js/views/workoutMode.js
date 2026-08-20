@@ -41,6 +41,109 @@ export function view(params, app) {
       })));
   }
 
+  function elapsedTimer(startedAt) {
+    const timerDisplay = el('span', { class: 'timer-digits', text: '00:00' });
+    function update() {
+      if (!timerDisplay.isConnected) return;
+      const s = Math.floor((Date.now() - startedAt) / 1000);
+      const hrs = Math.floor(s / 3600);
+      const mins = Math.floor((s % 3600) / 60);
+      const secs = s % 60;
+      timerDisplay.textContent = (hrs > 0 ? `${String(hrs).padStart(2, '0')}:` : '') + 
+        `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+      setTimeout(update, 1000);
+    }
+    setTimeout(update, 0);
+    return timerDisplay;
+  }
+
+  function getExerciseComparisons() {
+    const comparisons = [];
+    for (const id of ids) {
+      const ex = getExercise(id);
+      const history = store.exerciseHistory(id);
+      if (history.length > 1) {
+        // history[0] is today, history[1] is previous
+        const todaySets = history[0].sets.filter(s => s.done);
+        const prevSets = history[1].sets.filter(s => s.done);
+        if (todaySets.length && prevSets.length) {
+          const todayBest = todaySets.reduce((a, b) => Number(b.weight) > Number(a.weight) ? b : a);
+          const prevBest = prevSets.reduce((a, b) => Number(b.weight) > Number(a.weight) ? b : a);
+          
+          const weightDiff = todayBest.weight - prevBest.weight;
+          const repsDiff = todayBest.reps - prevBest.reps;
+          
+          let trend = 'same';
+          if (weightDiff > 0 || (weightDiff === 0 && repsDiff > 0)) trend = 'up';
+          else if (weightDiff < 0 || (weightDiff === 0 && repsDiff < 0)) trend = 'down';
+          
+          comparisons.push({
+            name: ex.name,
+            today: `${todayBest.weight} × ${todayBest.reps}`,
+            prev: `${prevBest.weight} × ${prevBest.reps}`,
+            trend,
+            diffText: weightDiff !== 0 
+              ? `${weightDiff > 0 ? '+' : ''}${weightDiff} kg` 
+              : repsDiff !== 0 ? `${repsDiff > 0 ? '+' : ''}${repsDiff} reps` : 'No change'
+          });
+        }
+      }
+    }
+    return comparisons;
+  }
+
+  function checkoutScreen() {
+    const seed = store.latestWeight()?.kg ?? 75;
+    const units = store.getSettings().units;
+    
+    const input = el('input', {
+      type: 'number', inputmode: 'decimal', step: '0.1', min: '20', max: '400',
+      class: 'weigh-input', value: String(seed), 'aria-label': `Weight in ${units}`
+    });
+    
+    const nudge = (delta) => {
+      const next = Math.round((Number(input.value || seed) + delta) * 10) / 10;
+      input.value = String(Math.min(400, Math.max(20, next)));
+    };
+    
+    return el('section', { class: 'card finish-card check-out-capture-card' }, [
+      el('div', { class: 'tick', html: icon('scale') }),
+      el('h2', { style: 'font-size:24px;text-align:center', text: 'GYM CHECK-OUT' }),
+      el('p', { class: 'muted', style: 'margin-top:6px;text-align:center', text: 'END-OF-SESSION WEIGHT' }),
+      
+      el('div', { class: 'weigh-row', style: 'margin-top:16px' }, [
+        el('button', { class: 'btn btn-icon', type: 'button', text: '−', onclick: () => nudge(-0.1) }),
+        el('div', { class: 'weigh-value' }, [input, el('span', { class: 'weigh-unit', text: units })]),
+        el('button', { class: 'btn btn-icon', type: 'button', text: '+', onclick: () => nudge(0.1) })
+      ]),
+      el('div', { class: 'row', style: 'gap:8px;justify-content:center;margin-top:10px;margin-bottom:20px' },
+        [-1, -0.5, 0.5, 1].map(d => el('button', {
+          class: 'chip', type: 'button', text: (d > 0 ? '+' : '') + d, onclick: () => nudge(d)
+        }))),
+      
+      el('button', {
+        class: 'btn btn-primary btn-lg btn-block', type: 'button', text: 'FINISH SESSION',
+        onclick: () => {
+          try {
+            const val = Number(input.value);
+            if (val > seed * 4 && val.toString().length >= 3 && !input.value.includes('.')) {
+              const suggested = val / 10;
+              if (confirm(`Did you mean ${suggested} ${units}?`)) {
+                input.value = String(suggested);
+                return;
+              }
+            }
+            store.addWeight(input.value, 'checkout', new Date(), day.id);
+            store.completeSession(day.id);
+            paint();
+          } catch (err) {
+            toast('Enter a valid weight', 'close');
+          }
+        }
+      })
+    ]);
+  }
+
   function finishScreen() {
     const prog = store.sessionProgress(day.id, ids);
     const session = store.completeSession(day.id);
@@ -53,19 +156,37 @@ export function view(params, app) {
 
     const w = store.weightsOn();
     const adherence = prog.total ? Math.round((prog.done / prog.total) * 100) : 0;
+    
+    // Previous session comparisons
+    const comparisons = getExerciseComparisons();
+    const compRows = comparisons.length 
+      ? el('div', { class: 'comp-rows stack', style: 'margin-top:16px;gap:8px;text-align:left;width:100%' }, [
+          el('p', { class: 'eyebrow', text: 'Strength Progress vs Last Session' }),
+          ...comparisons.map(c => el('div', { class: 'comp-row row-between', style: 'font-size:13.5px;padding:6px 0;border-bottom:1px solid var(--line-soft)' }, [
+            el('span', { class: 'comp-name grow', style: 'font-weight:650', text: c.name }),
+            el('div', { style: 'display:flex;align-items:center;gap:8px' }, [
+              el('span', { class: 'comp-prev dim', style: 'font-variant-numeric:tabular-nums', text: c.prev }),
+              el('span', { class: 'comp-arrow dim', text: c.trend === 'up' ? '↑' : c.trend === 'down' ? '↓' : '→' }),
+              el('span', { class: `comp-diff ${c.trend}`, style: `font-weight:700;color:var(${c.trend === 'up' ? '--c-workout' : c.trend === 'down' ? '--danger' : '--text-3'})`, text: c.diffText })
+            ])
+          ]))
+        ])
+      : null;
 
-    return el('section', { class: 'card finish-card' }, [
+    const b = store.dailyBreakdown();
+
+    return el('section', { class: 'card finish-card stack' }, [
       el('div', { class: 'tick', html: icon('check') }),
-      el('h2', { style: 'font-size:24px', text: 'WORKOUT COMPLETE' }),
-      el('p', { class: 'muted', style: 'margin-top:6px', text: `${day.name} · ${day.title}` }),
-      el('p', { class: 'dim', style: 'margin-top:4px', text: `${prog.done} / ${prog.total} exercises completed` }),
+      el('h2', { style: 'font-size:24px;text-align:center', text: 'SESSION SUMMARY' }),
+      el('p', { class: 'muted', style: 'margin-top:6px;text-align:center', text: `${day.name} · ${day.title}` }),
+      el('p', { class: 'dim', style: 'margin-top:4px;text-align:center', text: `${prog.done} / ${prog.total} exercises completed` }),
 
-      el('div', { class: 'finish-stats' }, [
-        el('div', {}, [el('b', { text: mins ? `${mins}` : '—' }), el('span', { text: 'Minutes' })]),
+      el('div', { class: 'finish-stats', style: 'width:100%' }, [
+        el('div', {}, [el('b', { text: mins ? `${mins}m` : '—' }), el('span', { text: 'Duration' })]),
         el('div', {}, [el('b', { text: String(sets) }), el('span', { text: 'Sets' })]),
         el('div', {}, [el('b', { text: `${adherence}%` }), el('span', { text: 'Adherence' })])
       ]),
-      el('div', { class: 'finish-stats', style: 'margin-top:10px' }, [
+      el('div', { class: 'finish-stats', style: 'margin-top:10px;width:100%' }, [
         el('div', {}, [el('b', { text: w.checkin ? `${w.checkin.kg}` : '—' }), el('span', { text: `Check-in ${units}` })]),
         el('div', {}, [el('b', { text: w.checkout ? `${w.checkout.kg}` : '—' }), el('span', { text: `Check-out ${units}` })]),
         el('div', {}, [el('b', { text: volume ? `${Math.round(volume)}` : '—' }), el('span', { text: `Volume ${units}` })])
@@ -74,17 +195,15 @@ export function view(params, app) {
       /* the difference is shown only with its caveat attached */
       sessionWeightNote(w.checkin?.kg ?? null, w.checkout?.kg ?? null),
 
-      el('div', { class: 'stack', style: 'margin-top:20px' }, [
-        !w.checkout ? el('button', {
-          class: 'btn btn-primary btn-lg btn-block', type: 'button',
-          html: `${icon('timer')}<span>GYM CHECK-OUT</span>`,
-          onclick: () => weighInSheet('checkout', { dayId: day.id, onSaved: paint })
-        }) : null,
-        el('a', {
-          class: `btn btn-lg btn-block ${w.checkout ? 'btn-primary' : ''}`.trim(),
-          href: '#/', text: 'DAILY SUMMARY'
-        }),
-        el('a', { class: 'btn btn-ghost btn-block', href: '#/progress', text: 'View progress' }),
+      compRows,
+
+      el('div', { class: 'finish-stats', style: 'margin-top:16px;border-top:1px solid var(--line-soft);padding-top:12px;width:100%' }, [
+        el('div', {}, [el('b', { text: `${b.score}%` }), el('span', { text: 'Daily Adherence Score' })])
+      ]),
+
+      el('div', { class: 'stack', style: 'margin-top:20px;width:100%' }, [
+        el('a', { class: 'btn btn-primary btn-lg btn-block', href: '#/', text: 'DAILY SUMMARY' }),
+        el('a', { class: 'btn btn-ghost btn-block', href: '#/analytics', text: 'View Analytics' }),
         el('button', {
           class: 'btn btn-ghost btn-block', type: 'button', text: 'Back to exercises',
           onclick: () => { index = 0; paint(); }
@@ -101,17 +220,30 @@ export function view(params, app) {
     const allDone = doneIds.size === ids.length;
     const ex = getExercise(ids[index]);
 
+    const w = store.weightsOn();
+    const startedAt = store.getSession(day.id).startedAt || Date.now();
+
+    if (allDone) {
+      if (!w.checkout) {
+        container.appendChild(checkoutScreen());
+      } else {
+        container.appendChild(finishScreen());
+      }
+      return;
+    }
+
     container.appendChild(el('header', { class: 'wm-head' }, [
-      el('p', { class: 'counter', text: `${day.name} · ${day.title}` }),
+      el('div', { class: 'row-between', style: 'width:100%' }, [
+        el('p', { class: 'counter', text: `${day.name} · ${day.title}` }),
+        el('div', { class: 'session-timer dim', style: 'display:flex;align-items:center;gap:4px;font-size:12.5px;font-weight:700' }, [
+          icon('timer'),
+          elapsedTimer(startedAt)
+        ])
+      ]),
       el('p', { class: 'counter', text: `Exercise ${index + 1} / ${ids.length}` }),
       el('h2', { text: ex.name })
     ]));
     container.appendChild(progressPips(doneIds));
-
-    if (allDone) {
-      container.appendChild(finishScreen());
-      return;
-    }
 
     /* Check-in comes first in the real gym flow, but it never blocks training. */
     if (!store.weightsOn().checkin) {

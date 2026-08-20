@@ -7,8 +7,8 @@
   "id": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#0a0c10",
-  "theme_color": "#0a0c10",
+  "background_color": "#050505",
+  "theme_color": "#050505",
   "categories": ["health", "fitness", "sports"],
   "icons": [
     { "src": "assets/icons/icon.svg", "sizes": "any", "type": "image/svg+xml" },
@@ -19,6 +19,8 @@
   "shortcuts": [
     { "name": "Today's workout", "url": "./index.html#/", "description": "Jump straight into today's session" },
     { "name": "Exercise library", "url": "./index.html#/library", "description": "Look up how to perform any exercise" },
-    { "name": "Progress", "url": "./index.html#/progress", "description": "Records and history" }
+    { "name": "Progress", "url": "./index.html#/progress", "description": "Records and history" },
+    { "name": "Analytics", "url": "./index.html#/analytics", "description": "Detailed analytics dashboard" },
+    { "name": "Body", "url": "./index.html#/body", "description": "Measurements and progress photos" }
   ]
 }

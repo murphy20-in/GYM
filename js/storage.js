@@ -11,13 +11,15 @@
 
 import { MEAL_PLAN, DEFAULT_HABITS, SCORE_WEIGHTS, TARGET_RANGE } from './data/plan.js';
 import { WEEK, dayFor, exercisesOf } from './data/workouts.js';
+import { getAllPhotos, importPhotos, clearAllPhotos } from './db.js';
 
 const K = {
   settings: 'gym.v1.settings',
   sessions: 'gym.v1.sessions',
   prs: 'gym.v1.prs',
   weights: 'gym.v1.weights',   /* [{date, time, kg, kind, dayId}] */
-  days: 'gym.v1.days'          /* { "2026-08-19": { meals: {}, habits: {} } } */
+  days: 'gym.v1.days',          /* { "2026-08-19": { meals: {}, habits: {} } } */
+  measurements: 'gym.v1.measurements' /* [{date, time, waist, chest, shoulders, neck, biceps, forearms, thighs, calves}] */
 };
 
 const DEFAULTS = {
@@ -110,6 +112,8 @@ export function weekStart(d = new Date()) {
 
 const allSessions = () => read(K.sessions, {});
 
+export { allSessions };
+
 export function getSession(dayId, date = new Date()) {
   const s = allSessions()[sessionKey(dayId, date)];
   return s || { dayId, startedAt: null, endedAt: null, ex: {} };
@@ -147,11 +151,32 @@ export function logSet(dayId, exId, index, data, setCount, date = new Date()) {
   const s = getSession(dayId, date);
   if (!s.startedAt) s.startedAt = Date.now();
   const e = entry(s, exId, Math.max(setCount, index + 1));
+  const oldBest = getPR(exId)?.best?.weight ?? 0;
   e.sets[index] = Object.assign({}, e.sets[index], data);
   /* the exercise counts as done once every planned set is ticked */
   e.done = e.sets.slice(0, setCount).every(x => x.done);
   saveSession(dayId, date, s);
+  
+  const logged = e.sets.filter(x => x.done && Number(x.weight) > 0);
+  let isNewPR = false;
+  let top = null;
+  if (logged.length) {
+    top = logged.reduce((a, b) => (Number(b.weight) > Number(a.weight) ? b : a));
+    const newWeight = Number(top.weight);
+    if (newWeight > oldBest) {
+      isNewPR = true;
+    }
+  }
+  
   updatePR(exId, e.sets, date);
+  
+  if (isNewPR && oldBest > 0 && data.done) {
+    e.newPR = {
+      weight: top.weight,
+      reps: top.reps,
+      prevWeight: oldBest
+    };
+  }
   return e;
 }
 
@@ -387,12 +412,15 @@ export function weightGoal() {
   const start = s.startWeight ?? current;
   const target = Number(s.targetWeight) || TARGET_RANGE.default;
   if (current == null || start == null) {
-    return { current: null, start: null, target, remaining: null, pct: 0 };
+    return { current: null, start: null, target, remaining: null, pct: 0, trendWeight: null };
   }
+  const series = dailyWeights();
+  const trend = movingAverage(series);
+  const trendWeight = trend.length ? trend[trend.length - 1].kg : current;
   const remaining = Math.max(0, Math.round((current - target) * 10) / 10);
   const span = start - target;
-  const pct = span <= 0 ? 100 : Math.max(0, Math.min(100, Math.round(((start - current) / span) * 100)));
-  return { current, start, target, remaining, pct, lost: Math.round((start - current) * 10) / 10 };
+  const pct = span <= 0 ? 100 : Math.max(0, Math.min(100, Math.round(((start - trendWeight) / span) * 100)));
+  return { current, start, target, remaining, pct, lost: Math.round((start - current) * 10) / 10, trendWeight };
 }
 
 /* ---------- day log: meals and habits ---------- */
@@ -403,6 +431,10 @@ export function getDayLog(date = new Date()) {
   const d = typeof date === 'string' ? date : dateKey(date);
   const log = allDays()[d];
   return { meals: {}, habits: {}, ...(log || {}) };
+}
+
+export function allDays() {
+  return read(K.days, {});
 }
 
 function saveDayLog(dateStr, log) {
@@ -708,18 +740,21 @@ function bestStreak(pick) {
 
 /* ---------- data management ---------- */
 
-export function exportData() {
+export async function exportData() {
+  const photos = await getAllPhotos();
   return JSON.stringify({
     version: 2, exportedAt: new Date().toISOString(),
     settings: getSettings(),
     sessions: allSessions(),
     prs: allPRs(),
     weights: allWeights(),
-    days: allDays()
+    days: allDays(),
+    measurements: getMeasurements(),
+    progressPhotos: photos
   }, null, 2);
 }
 
-export function importData(json) {
+export async function importData(json) {
   const data = JSON.parse(json);
   if (!data || typeof data !== 'object') throw new Error('Not a valid backup file.');
   if (data.settings) write(K.settings, data.settings);
@@ -727,6 +762,10 @@ export function importData(json) {
   if (data.prs) write(K.prs, data.prs);
   if (data.weights) write(K.weights, data.weights);
   if (data.days) write(K.days, data.days);
+  if (data.measurements) write(K.measurements, data.measurements);
+  if (data.progressPhotos) {
+    await importPhotos(data.progressPhotos);
+  }
   return true;
 }
 
@@ -745,5 +784,167 @@ export function clearAll(what = 'all') {
     }
     write(K.days, all);
   }
-  if (what === 'all') { write(K.days, {}); write(K.settings, {}); }
+  if (what === 'all' || what === 'measurements') {
+    write(K.measurements, []);
+  }
+  if (what === 'all') {
+    write(K.days, {});
+    write(K.settings, {});
+    clearAllPhotos();
+  }
+}
+
+/* ---------- custom milestones ---------- */
+import { MILESTONES as DEFAULT_MILESTONES } from './data/plan.js';
+
+export function getMilestones() {
+  const settings = getSettings();
+  return Array.isArray(settings.milestones) ? settings.milestones : DEFAULT_MILESTONES;
+}
+
+export function saveMilestones(list) {
+  const sorted = list.map(Number).filter(n => !isNaN(n) && n > 0).sort((a, b) => b - a);
+  saveSettings({ milestones: sorted });
+  return getMilestones();
+}
+
+/* ---------- body measurements ---------- */
+const allMeasurements = () => read(K.measurements, []);
+
+export function getMeasurements() {
+  return allMeasurements();
+}
+
+export function addMeasurement(data, date = new Date()) {
+  const d = dateKey(date);
+  const list = allMeasurements();
+  const entry = {
+    date: d,
+    time: `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`,
+    ...data
+  };
+  const at = list.findIndex(e => e.date === d);
+  if (at >= 0) {
+    list[at] = Object.assign(list[at], entry);
+  } else {
+    list.push(entry);
+  }
+  list.sort((a, b) => a.date.localeCompare(b.date));
+  write(K.measurements, list);
+  return entry;
+}
+
+export function getMeasurementsStats() {
+  const list = allMeasurements();
+  const keys = ['waist', 'chest', 'shoulders', 'neck', 'biceps', 'forearms', 'thighs', 'calves'];
+  const out = {};
+  
+  for (const key of keys) {
+    const history = list.filter(e => e[key] != null);
+    if (!history.length) {
+      out[key] = null;
+      continue;
+    }
+    const current = history[history.length - 1][key];
+    const previous = history.length > 1 ? history[history.length - 2][key] : null;
+    const change = previous != null ? current - previous : 0;
+    
+    // 30-day change
+    const cutoff30 = new Date();
+    cutoff30.setDate(cutoff30.getDate() - 30);
+    const cutStr30 = dateKey(cutoff30);
+    const old30Entry = history.find(e => e.date >= cutStr30);
+    const change30 = old30Entry && old30Entry !== history[history.length - 1] ? current - old30Entry[key] : null;
+    
+    // All-time change
+    const first = history[0][key];
+    const changeAll = current - first;
+    
+    out[key] = {
+      current,
+      previous,
+      change: Math.round(change * 10) / 10,
+      change30: change30 != null ? Math.round(change30 * 10) / 10 : null,
+      changeAll: Math.round(changeAll * 10) / 10
+    };
+  }
+  return out;
+}
+
+/* ---------- weight analytics helpers ---------- */
+export function getWeightLossRate() {
+  const series = dailyWeights();
+  if (series.length < 5) return null;
+  const trend = movingAverage(series);
+  if (trend.length < 5) return null;
+  
+  const latestTrend = trend[trend.length - 1];
+  const firstTrend = trend[0];
+  const dateDiffMs = new Date(latestTrend.date) - new Date(firstTrend.date);
+  const weeks = dateDiffMs / (1000 * 60 * 60 * 24 * 7);
+  if (weeks < 1) return null;
+  
+  const totalChange = latestTrend.kg - firstTrend.kg;
+  const ratePerWeek = totalChange / weeks;
+  return Math.round(ratePerWeek * 100) / 100;
+}
+
+export function getGoalProjection() {
+  const rate = getWeightLossRate();
+  if (rate == null || rate >= 0) return null;
+  
+  const goal = weightGoal();
+  if (goal.current == null || goal.trendWeight == null || goal.trendWeight <= goal.target) return null;
+  
+  const kgToLose = goal.trendWeight - goal.target;
+  const weeksNeeded = kgToLose / (-rate);
+  
+  const targetDate = new Date();
+  targetDate.setDate(targetDate.getDate() + Math.round(weeksNeeded * 7));
+  
+  const options = { month: 'short', year: 'numeric' };
+  if (weeksNeeded < 8) options.day = 'numeric';
+  return {
+    weeks: Math.round(weeksNeeded * 10) / 10,
+    dateStr: targetDate.toLocaleDateString(undefined, options)
+  };
+}
+
+/* ---------- workout streak calculations ---------- */
+export function getWorkoutStreaks() {
+  const sessions = allSessions();
+  const sessionDates = new Set(Object.keys(sessions).map(k => k.split('|')[0]));
+  const keys = [...sessionDates].sort();
+  if (!keys.length) return { current: 0, longest: 0 };
+  
+  let longest = 0;
+  let current = 0;
+  let run = 0;
+  
+  const start = new Date(keys[0] + 'T12:00:00');
+  const today = new Date();
+  const cursor = new Date(start);
+  
+  while (dateKey(cursor) <= dateKey(today)) {
+    const dk = dateKey(cursor);
+    const day = dayFor(cursor);
+    
+    if (day.rest) {
+      // rest day: does not break streak
+    } else {
+      const hasWorkout = keys.includes(dk) && sessions[`${dk}|${day.id}`]?.endedAt;
+      if (hasWorkout) {
+        run++;
+        longest = Math.max(longest, run);
+      } else {
+        if (dk !== dateKey(today)) {
+          run = 0;
+        }
+      }
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  current = run;
+  
+  return { current, longest };
 }

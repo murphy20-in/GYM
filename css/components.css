@@ -7,6 +7,7 @@
   border: 1px solid var(--line-soft);
   border-radius: var(--r);
   padding: 16px;
+  position: relative;
 }
 
 .card-tight { padding: 12px 14px; }
@@ -22,8 +23,8 @@
 
 .eyebrow {
   font-size: 11px;
-  font-weight: 700;
-  letter-spacing: .16em;
+  font-weight: 800;
+  letter-spacing: .18em;
   text-transform: uppercase;
   color: var(--text-3);
 }
@@ -64,9 +65,10 @@
   background: var(--surface-2);
   border: 1px solid var(--line);
   color: var(--text);
-  font-weight: 650;
+  font-weight: 700;
   font-size: 15px;
-  transition: transform .12s var(--ease), background .18s var(--ease), border-color .18s;
+  letter-spacing: 0.02em;
+  transition: transform .12s var(--ease), background .18s var(--ease), border-color .18s, box-shadow .18s;
 }
 .btn:active { transform: scale(.975); }
 .btn:disabled { opacity: .45; pointer-events: none; }
@@ -76,12 +78,25 @@
   border-color: var(--accent);
   color: var(--accent-ink);
   font-weight: 800;
+  box-shadow: 0 0 0 1px var(--accent), 0 4px 20px var(--accent-glow);
 }
-.btn-ghost { background: transparent; }
-.btn-danger { color: var(--danger); border-color: rgba(255, 92, 70, .35); }
+.btn-primary:active { box-shadow: 0 0 0 1px var(--accent), 0 2px 10px var(--accent-glow); }
+
+.btn-ghost { 
+  background: transparent; 
+  border-color: var(--line);
+  color: var(--text-2);
+}
+.btn-ghost:hover, .btn-ghost:focus { 
+  background: var(--surface-2); 
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.btn-danger { color: var(--danger); border-color: rgba(255, 51, 51, .35); }
 .btn-block { width: 100%; }
 .btn-lg { min-height: 54px; font-size: 16px; }
-.btn-icon { width: var(--tap); min-height: var(--tap); padding: 0; border-radius: 12px; }
+.btn-icon { width: var(--tap); min-height: var(--tap); padding: 0; border-radius: 12px; background: var(--surface-2); border-color: var(--line); }
 
 /* ---------- chips / pills ---------- */
 
@@ -104,10 +119,11 @@
   border: 1px solid var(--line);
   color: var(--text-2);
   font-size: 13px;
-  font-weight: 650;
+  font-weight: 700;
   white-space: nowrap;
+  transition: all .18s var(--ease);
 }
-.chip[aria-pressed='true'] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.chip[aria-pressed='true'] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); box-shadow: 0 0 0 1px var(--accent); }
 
 .tag {
   display: inline-flex;
@@ -118,7 +134,7 @@
   background: var(--surface-2);
   border: 1px solid var(--line-soft);
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 800;
   letter-spacing: .06em;
   text-transform: uppercase;
   color: var(--text-2);
@@ -138,8 +154,9 @@
   display: block;
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, var(--accent), #9ee83a);
+  background: linear-gradient(90deg, var(--accent), #ff4444);
   transition: width .45s var(--ease);
+  box-shadow: 0 0 8px var(--accent-glow);
 }
 .bar-sm { height: 5px; }
 
@@ -148,7 +165,7 @@
 .figure {
   position: relative;
   background:
-    radial-gradient(120% 90% at 50% 0%, rgba(198, 249, 75, .07), transparent 62%),
+    radial-gradient(120% 90% at 50% 0%, rgba(255, 26, 26, .08), transparent 62%),
     var(--surface);
   border: 1px solid var(--line-soft);
   border-radius: var(--r-lg);
@@ -162,43 +179,43 @@
   aspect-ratio: 260 / 210;
 }
 
-/* body */
+/* body - red accent for muscle highlighting */
 .fx-torso-line, .fx-limb { stroke: #e8eef6; stroke-linecap: round; fill: none; }
 .fx-torso { fill: #e8eef6; }
 .fx-torso-line { stroke-linecap: round; }
 .fx-head { fill: #e8eef6; }
-.fx-joint { fill: #0a0c10; }
+.fx-joint { fill: #050505; }
 .fx-far { stroke: #8e9bad; }
 
-/* equipment */
+/* equipment - red plates */
 .fx-plate { fill: var(--equip); }
-.fx-plate-hub { fill: #0a0c10; }
+.fx-plate-hub { fill: #050505; }
 .fx-bar { stroke: var(--equip); stroke-linecap: round; }
 .fx-cable { stroke: var(--equip); stroke-linecap: round; fill: none; }
-.fx-pulley { fill: #0a0c10; stroke: var(--equip); stroke-width: 2; }
+.fx-pulley { fill: #050505; stroke: var(--equip); stroke-width: 2; }
 .fx-pad { stroke: #4b5666; stroke-linecap: round; fill: none; }
 .fx-pad-fill { fill: #4b5666; }
 .fx-frame { stroke: #333e4d; stroke-linecap: round; fill: none; }
 .fx-frame-fill { fill: #232c38; }
 .fx-floor { stroke: #2a323d; }
 
-/* End-position ghost: drawn as a thin outline so it reads as "the other end of
-   the movement" instead of a second body overlapping the first. */
+/* End-position ghost: drawn as a thin outline so it reads as "the other end
+   of the movement" instead of a second body overlapping the first. */
 .fx-ghost { opacity: .3; stroke-width: 2; }
 .fx-ghost.fx-torso-line { stroke-width: 3.5; }
 .fx-ghost.fx-head { opacity: .18; }
 .fx-ghost.fx-torso { opacity: .16; }
 .fx-ghost.fx-joint { opacity: 0; }
 
-/* range-of-motion arrow */
-.fx-arrowhead { fill: var(--warn); stroke: none; }
+/* range-of-motion arrow - red */
+.fx-arrowhead { fill: var(--accent); stroke: none; }
 
 .fx-arrow {
-  stroke: var(--warn);
+  stroke: var(--accent);
   stroke-width: 2.4;
   stroke-linecap: round;
   fill: none;
-  color: var(--warn);
+  color: var(--accent);
   stroke-dasharray: 5 5;
 }
 
@@ -209,7 +226,7 @@
   gap: 10px;
   padding: 10px 12px;
   border-top: 1px solid var(--line-soft);
-  background: rgba(10, 12, 16, .35);
+  background: rgba(5, 5, 5, 0.5);
 }
 
 .phase {
@@ -278,15 +295,15 @@
 /* ---------- muscle map ---------- */
 
 .muscle-map { display: block; width: 100%; max-width: 300px; margin: 0 auto; height: auto; }
-.mm-neutral { fill: #232b35; }
-.mm-idle { fill: #2b3340; }
+.mm-neutral { fill: #1a1a1a; }
+.mm-idle { fill: #1f1f1f; }
 .mm-primary { fill: var(--accent); }
-.mm-secondary { fill: #6f8a3a; }
+.mm-secondary { fill: #aa2222; }
 .mm-label { fill: var(--text-3); font-size: 6px; font-weight: 700; letter-spacing: .18em; text-anchor: middle; }
 
 .mm-legend { list-style: none; display: grid; gap: 6px; margin-top: 12px; }
 .mm-row { display: flex; align-items: center; gap: 10px; font-size: 13px; }
-.mm-swatch { width: 12px; height: 12px; border-radius: 4px; background: #6f8a3a; flex: 0 0 auto; }
+.mm-swatch { width: 12px; height: 12px; border-radius: 4px; background: #aa2222; flex: 0 0 auto; }
 .mm-row-primary .mm-swatch { background: var(--accent); }
 .mm-name { flex: 1; font-weight: 650; }
 .mm-kind { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); }

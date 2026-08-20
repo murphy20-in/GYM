@@ -199,6 +199,26 @@ export function view(params, app) {
         text: 'Weight counts as recorded, not as a number going down. Weight fluctuates naturally — the trend is what matters.' })
     ]));
 
+    /* ---------- FOCUS / Smart Insights ---------- */
+    const insights = generateInsights(b, goal, w, log, habits, plan, targets);
+    if (insights.length > 0) {
+      container.appendChild(el('section', { class: 'card accent-progress' }, [
+        el('div', { class: 'row-between' }, [
+          el('p', { class: 'eyebrow', text: 'Focus' }),
+          el('a', { class: 'link-more', href: '#/analytics', text: 'All →' })
+        ]),
+        el('ul', { class: 'focus-list', style: 'margin-top:10px' }, insights.map((insight, i) => 
+          el('li', { class: 'focus-item' }, [
+            el('span', { class: 'focus-num', text: String(i + 1) }),
+            el('div', { class: 'focus-text' }, [
+              el('strong', { text: insight.title }),
+              el('p', { class: 'dim', style: 'font-size:12.5px;margin-top:2px;line-height:1.4', text: insight.detail })
+            ])
+          ])
+        ))
+      ]));
+    }
+
     /* ---------- week at a glance ---------- */
     container.appendChild(el('div', {}, [
       el('div', { class: 'section-title' }, [el('h2', { text: 'This week' })]),
@@ -224,4 +244,136 @@ function formatValue(habit, entry) {
   const v = Number(entry.value) || 0;
   if (habit.type === 'duration') return `${v} h`;
   return habit.unit ? `${v}` : String(v);
+}
+
+/* ---------- Smart Insights Generator ---------- */
+
+function generateInsights(breakdown, goal, weights, log, habits, plan, targets) {
+  const insights = [];
+  const today = store.dateKey();
+  const weekAgo = store.dateKey(new Date(Date.now() - 7 * 86400000));
+  const monthAgo = store.dateKey(new Date(Date.now() - 30 * 86400000));
+
+  /* 1. Workout consistency */
+  if (!breakdown.day.rest) {
+    const w = store.weekBreakdown();
+    if (w.workouts.total > 0 && w.workouts.done < w.workouts.total) {
+      insights.push({
+        title: 'Consistency',
+        detail: `You've completed ${w.workouts.done} of ${w.workouts.total} planned workouts this week. ${w.workouts.total - w.workouts.done} remaining.`
+      });
+    } else if (w.workouts.done === w.workouts.total && w.workouts.total > 0) {
+      insights.push({
+        title: 'Consistency',
+        detail: `Perfect week so far — ${w.workouts.done}/${w.workouts.total} workouts completed.`
+      });
+    }
+  }
+
+  /* 2. Protein adherence */
+  const proteinPct = targets.protein ? (breakdown.nutrition.protein / targets.protein) * 100 : 100;
+  if (proteinPct < 80 && breakdown.nutrition.done > 0) {
+    insights.push({
+      title: 'Protein',
+      detail: `Daily protein is at ${Math.round(proteinPct)}% of target (${breakdown.nutrition.protein}/${targets.protein}g). Add a protein-rich meal or shake.`
+    });
+  } else if (proteinPct >= 100 && breakdown.nutrition.done > 0) {
+    insights.push({
+      title: 'Protein',
+      detail: `Protein target hit — ${breakdown.nutrition.protein}g/${targets.protein}g.`
+    });
+  }
+
+  /* 3. Weight trend */
+  if (goal.current != null) {
+    const rate = store.getWeightLossRate();
+    if (rate != null) {
+      if (rate < -0.2) {
+        insights.push({
+          title: 'Weight Trend',
+          detail: `7-day trend is ${rate} kg/week — moving toward target. Keep the current routine consistent.`
+        });
+      } else if (rate > 0.2) {
+        insights.push({
+          title: 'Weight Trend',
+          detail: `7-day trend is +${rate} kg/week — trending up. Review nutrition adherence and check-in consistency.`
+        });
+      } else {
+        insights.push({
+          title: 'Weight Trend',
+          detail: `7-day trend is stable (${rate} kg/week). Consistency will reveal direction.`
+        });
+      }
+    } else {
+      insights.push({
+        title: 'Weight Trend',
+        detail: 'Not enough weigh-in data for a trend. Log check-in and check-out weights each session.'
+      });
+    }
+  }
+
+  /* 4. Habit tracking */
+  const smokingHabit = habits.find(h => h.id === 'smoking');
+  if (smokingHabit) {
+    const totals = store.habitTotals('smoking');
+    if (totals.week > 0) {
+      const prevWeekTotals = getPrevWeekHabitTotal('smoking');
+      if (prevWeekTotals > 0) {
+        const change = totals.week - prevWeekTotals;
+        if (change < 0) {
+          insights.push({
+            title: 'Smoking',
+            detail: `Down ${Math.abs(change)} cigarettes vs last week (${totals.week} this week). Trend improving.`
+          });
+        } else if (change > 0) {
+          insights.push({
+            title: 'Smoking',
+            detail: `Up ${change} cigarettes vs last week (${totals.week} this week). Consider a reset.`
+          });
+        }
+      }
+    }
+  }
+
+  /* 5. Session completion reminder */
+  if (!breakdown.day.rest && breakdown.workout.done < breakdown.workout.total && weights.checkin) {
+    insights.push({
+      title: 'Session',
+      detail: `${breakdown.workout.total - breakdown.workout.done} exercises remaining. Finish strong.`
+    });
+  }
+
+  /* 6. Check-out reminder */
+  if (!breakdown.day.rest && weights.checkin && !weights.checkout && breakdown.workout.done === breakdown.workout.total) {
+    insights.push({
+      title: 'Check-Out',
+      detail: 'Workout complete — record your check-out weight to finish the session.'
+    });
+  }
+
+  /* 7. Streak */
+  const streak = store.getWorkoutStreaks();
+  if (streak.current >= 7) {
+    insights.push({
+      title: 'Streak',
+      detail: `${streak.current} day workout streak — building momentum.`
+    });
+  }
+
+  /* Limit to top 3 */
+  return insights.slice(0, 3);
+}
+
+function getPrevWeekHabitTotal(habitId) {
+  const allDays = store.allDays();
+  const twoWeeksAgo = store.dateKey(new Date(Date.now() - 14 * 86400000));
+  const weekAgo = store.dateKey(new Date(Date.now() - 7 * 86400000));
+  let total = 0;
+  for (const [date, log] of Object.entries(allDays)) {
+    if (date >= twoWeeksAgo && date < weekAgo) {
+      const entry = log.habits?.[habitId];
+      if (entry?.tracked) total += Number(entry.value) || 0;
+    }
+  }
+  return total;
 }
