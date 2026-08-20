@@ -1,16 +1,19 @@
 /* mindset.css — editorial poster style motivation screen */
 
 .mindset-view {
-  min-height: 100dvh;
+  /* no 100dvh: dynamic viewport units shift under mobile browser toolbars and
+     leave the poster mis-measured. Normal flow with generous padding is stable
+     on every device. */
+  min-height: auto;
 }
 
 .mindset-canvas {
-  min-height: 100dvh;
+  min-height: 60vh;
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  padding: 40px 20px;
+  padding: 56px 20px 40px;
   text-align: center;
   background: #000;
   position: relative;
@@ -275,3 +278,47 @@
     gap: 8px;
   }
 }
+
+/* ---------- poster scale (editorial layer) ---------- */
+
+.mindset-mantra {
+  font-family: var(--font-display);
+  font-size: clamp(54px, 19vw, 132px);
+  line-height: .8;
+  letter-spacing: -.02em;
+  text-transform: uppercase;
+  text-align: center;
+  margin: 0;
+  padding: 0 4px;
+  /* long mantras must not blow out the line box on a 360px phone */
+  overflow-wrap: anywhere;
+}
+
+/* Solid red poster type. An earlier attempt clipped the photograph into the
+   letterforms with background-clip:text; it renders as nothing in Chrome once
+   the element carries a filter or a block-level child, so the far more robust
+   treatment is red type over a darkened silhouette. */
+.mindset-mantra {
+  color: var(--red, #ff1a1a);
+  -webkit-text-fill-color: currentColor;
+  text-shadow: 0 0 70px rgba(255, 26, 26, .35), 0 6px 26px rgba(0, 0, 0, .7);
+}
+
+.mindset-canvas.has-figure::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: url('../assets/img/armsout.webp') 50% 42% / cover no-repeat;
+  opacity: .22;
+  mix-blend-mode: luminosity;
+  pointer-events: none;
+}
+
+/* keep the words and numbers above the backdrop */
+.mindset-canvas > * { position: relative; z-index: 1; }
+
+/* The span must stay inline: background-clip:text clips to the element's own
+   inline text, and a block child leaves the heading with none — which paints
+   nothing at all. */
+.mindset-mantra span { display: inline; }

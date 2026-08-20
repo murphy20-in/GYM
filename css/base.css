@@ -155,9 +155,11 @@ a { color: inherit; }
   bottom: 0; left: 0; right: 0;
   z-index: 50;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  /* auto-flow so the bar never wraps when a destination is added or removed */
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
   gap: 2px;
-  padding: 6px 6px env(safe-area-inset-bottom);
+  padding: 6px 4px env(safe-area-inset-bottom);
   background: rgba(5, 5, 5, 0.95);
   backdrop-filter: blur(14px);
   border-top: 1px solid var(--line);

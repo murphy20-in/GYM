@@ -350,7 +350,8 @@
 @media (max-width: 380px) {
   .weight-grid { gap: 6px; }
   .weight-metric strong { font-size: 19px; }
-  .nav a { font-size: 9px; letter-spacing: .02em; }
+  .nav a { font-size: 8.5px; letter-spacing: 0; gap: 2px; padding: 6px 1px; }
+  .nav a svg { width: 20px; height: 20px; }
   .stat-row { gap: 6px; }
 }
 
@@ -454,4 +455,11 @@
   animation-duration: .001ms !important;
   animation-iteration-count: 1 !important;
   transition-duration: .001ms !important;
+}
+
+/* Six destinations need tighter labels on every phone width, not just the
+   narrowest — 390 and 412 crowd just as much as 360. */
+@media (max-width: 460px) {
+  .nav a { font-size: 8.5px; letter-spacing: 0; gap: 2px; padding: 6px 1px; }
+  .nav a svg { width: 20px; height: 20px; }
 }

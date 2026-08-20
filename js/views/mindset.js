@@ -35,13 +35,15 @@ export function view(params, app) {
   function paint() {
     container.replaceChildren();
 
-    /* Full-screen black canvas */
-    const canvas = el('div', { class: 'mindset-canvas' });
+    /* Full-screen black canvas with the silhouette pushed far back */
+    const canvas = el('div', { class: 'mindset-canvas has-figure' });
 
-    /* Mantra display - large, editorial */
-    const mantraEl = el('h1', { class: 'mindset-mantra', 'aria-live': 'polite' }, [
-      el('span', { text: MANTRAS[currentMantra] })
-    ]);
+    /* Mantra at poster scale. "WHY NOT ME?" gets the photograph knocked through
+       the letterforms — the rest render as solid red so short words stay punchy. */
+    const text = MANTRAS[currentMantra];
+    const mantraEl = el('h1', {
+      class: 'mindset-mantra display', 'aria-live': 'polite'
+    }, [el('span', { text })]);
 
     /* Silhouette divider */
     const silhouette = el('div', { class: 'mindset-silhouette', 'aria-hidden': 'true' });
@@ -146,6 +148,8 @@ export function view(params, app) {
       }, 200);
     }
   });
+
+  paint();
 
   return {
     title: 'Mindset',

@@ -162,6 +162,8 @@ export function view(params, app) {
   }
 
   function renderTransformationTimeline() {
+    /* `units` lives in paint()'s scope; this function needs its own copy */
+    const units = store.getSettings().units;
     const measurements = store.getMeasurements();
     const weights = store.dailyWeights();
     const milestones = store.getMilestones();

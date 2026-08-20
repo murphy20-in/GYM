@@ -5,7 +5,7 @@
  * needs the network again.
  */
 
-const VERSION = 'gym-v4';
+const VERSION = 'gym-v5';
 const ASSETS = [
   './',
   './index.html',
@@ -14,6 +14,7 @@ const ASSETS = [
   './css/components.css',
   './css/views.css',
   './css/tracking.css',
+  './css/editorial.css',
   './css/mindset.css',
   './js/app.js',
   './js/ui.js',
@@ -43,6 +44,10 @@ const ASSETS = [
   './js/views/analytics.js',
   './js/views/mindset.js',
   './js/views/bodyAnalytics.js',
+  './assets/img/shoulder.webp',
+  './assets/img/armsout.webp',
+  './assets/img/ego.webp',
+  './assets/img/texture.webp',
   './assets/icons/icon.svg',
   './assets/icons/icon-192.png',
   './assets/icons/icon-512.png',

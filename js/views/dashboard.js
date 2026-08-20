@@ -30,12 +30,39 @@ export function view(params, app) {
 
     container.replaceChildren();
 
-    /* ---------- greeting ---------- */
-    container.appendChild(el('header', { class: 'dash-head' }, [
-      el('p', { class: 'greeting', text: `${greeting()}, ${settings.name || 'there'}` }),
-      el('p', { class: 'dim', style: 'font-size:12.5px',
-        text: new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' }) })
-    ]));
+    /* ---------- poster hero ----------
+       Date, split and current weight at display scale over a red-graded
+       photograph. Numbers stay the hero; the image is atmosphere. */
+    const now = new Date();
+    const goalNow = store.weightGoal();
+    const bProg = b;
+    const hero = el('section', { class: 'poster' }, [
+      el('div', { class: 'poster-bg', style: `background-image:url('assets/img/shoulder.webp')` }),
+      el('p', { class: 'kicker', text: `${greeting()}, ${(settings.name || 'athlete').toUpperCase()}` }),
+      el('div', { class: 'stack-date' }, [
+        el('span', { class: 'day-num', text: String(now.getDate()) }),
+        el('span', { class: 'month', html:
+          `${now.toLocaleDateString(undefined, { month: 'long' }).toUpperCase()}<br>${now.getFullYear()}` })
+      ]),
+      el('p', { class: 'display split', text: day.rest ? 'REST / RECOVERY' : day.title }),
+      el('div', { class: 'rule' }),
+      el('div', { class: 'metric-row' }, [
+        el('div', { class: 'metric' }, [
+          el('b', { text: goalNow.current != null ? `${goalNow.current}` : '—' }),
+          el('span', { text: `Current ${settings.units}` })
+        ]),
+        el('div', { class: 'metric' }, [
+          el('b', { text: goalNow.remaining != null ? `${goalNow.remaining}` : '—' }),
+          el('span', { text: `To target` })
+        ]),
+        el('div', { class: 'metric' }, [
+          el('b', { text: `${bProg.score}%` }),
+          el('span', { text: 'Today' })
+        ])
+      ]),
+      el('p', { class: 'tagline', text: day.rest ? 'Recovery is the work too.' : 'The work continues.' })
+    ]);
+    container.appendChild(hero);
 
     /* ---------- weight ---------- */
     const weightCard = el('section', { class: 'card accent-weight' }, [

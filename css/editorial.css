@@ -1,0 +1,289 @@
+/* editorial.css — the red/black poster layer.
+ *
+ * Oversized condensed type, blood-red photography, heavy negative space. The
+ * display face is a system-condensed stack rather than a webfont: the app has
+ * to work offline in a gym basement, and a 200KB font download is the wrong
+ * trade for a heading.
+ */
+
+:root {
+  --font-display: 'Impact', 'Haettenschweiler', 'Arial Narrow Bold',
+                  'Anton', 'Roboto Condensed', 'Arial Black', system-ui, sans-serif;
+  --font-data: ui-monospace, 'SF Mono', 'Roboto Mono', Menlo, Consolas, monospace;
+
+  --red: #ff1a1a;
+  --red-deep: #8f0000;
+  --red-ink: #120303;
+}
+
+/* ---------- display typography ---------- */
+
+.display {
+  font-family: var(--font-display);
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  line-height: 0.86;
+  text-transform: uppercase;
+}
+
+.display-xl { font-size: clamp(52px, 17vw, 132px); }
+.display-lg { font-size: clamp(38px, 12vw, 84px); }
+.display-md { font-size: clamp(28px, 8.5vw, 52px); }
+
+.data-num {
+  font-family: var(--font-data);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+  font-weight: 700;
+}
+
+/* ---------- poster hero ---------- */
+
+.poster {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--r-lg);
+  min-height: 340px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 22px 20px 20px;
+  isolation: isolate;
+  background: #000;
+}
+
+/* the photograph, pushed back behind a hard vignette so text stays legible */
+.poster-bg {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  background-size: cover;
+  background-position: 50% 28%;
+  opacity: .82;
+  transform: scale(1.02);
+}
+
+.poster::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(180deg, rgba(5, 3, 3, .72) 0%, rgba(5, 3, 3, .18) 38%, rgba(5, 3, 3, .93) 88%),
+    radial-gradient(120% 80% at 78% 12%, rgba(255, 26, 26, .30), transparent 62%);
+}
+
+.poster .kicker {
+  font-family: var(--font-data);
+  font-size: 10.5px;
+  letter-spacing: .34em;
+  text-transform: uppercase;
+  color: var(--red);
+  font-weight: 700;
+}
+
+.poster .stack-date {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 6px;
+}
+.poster .stack-date .day-num {
+  font-family: var(--font-display);
+  font-size: clamp(56px, 19vw, 104px);
+  line-height: .8;
+  font-weight: 900;
+  color: var(--text);
+}
+.poster .stack-date .month {
+  font-family: var(--font-display);
+  font-size: clamp(15px, 4.4vw, 22px);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  line-height: 1.1;
+}
+
+.poster .split { font-size: clamp(24px, 7.6vw, 44px); margin-top: 10px; color: var(--text); }
+
+.poster .metric-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 18px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+.poster .metric {
+  display: grid;
+  gap: 2px;
+}
+.poster .metric b {
+  font-family: var(--font-data);
+  font-size: clamp(26px, 8vw, 40px);
+  font-weight: 700;
+  letter-spacing: -.04em;
+  line-height: 1;
+}
+.poster .metric span {
+  font-size: 9.5px;
+  letter-spacing: .22em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  font-weight: 700;
+}
+
+.poster .rule {
+  height: 2px;
+  background: var(--red);
+  width: 46px;
+  margin: 16px 0 12px;
+}
+
+.poster .tagline {
+  font-family: var(--font-display);
+  font-size: clamp(17px, 5vw, 26px);
+  line-height: .95;
+  color: var(--red);
+  text-transform: uppercase;
+  letter-spacing: -.01em;
+}
+
+/* ---------- image knocked through type ---------- */
+
+/* The "WHY NOT ME?" composition: the photograph shows through the letterforms
+   instead of sitting behind them. Falls back to solid red where unsupported. */
+.knockout {
+  font-family: var(--font-display);
+  font-weight: 900;
+  text-transform: uppercase;
+  line-height: .78;
+  letter-spacing: -.02em;
+  color: var(--red);
+  text-align: center;
+}
+
+@supports (-webkit-background-clip: text) or (background-clip: text) {
+  .knockout.has-image {
+    background-image:
+      linear-gradient(180deg, rgba(255, 26, 26, .55), rgba(255, 26, 26, .92)),
+      var(--knock-img);
+    background-size: cover;
+    background-position: 50% 34%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+  }
+}
+
+/* ---------- mindset poster ---------- */
+
+.mindset-poster {
+  position: relative;
+  min-height: 68vh;
+  display: grid;
+  place-content: center;
+  gap: 18px;
+  padding: 30px 18px;
+  border-radius: var(--r-lg);
+  background: #050303;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.mindset-poster .glow {
+  position: absolute;
+  inset: -20% -30% auto -30%;
+  height: 70%;
+  z-index: -1;
+  background: radial-gradient(60% 60% at 50% 40%, rgba(255, 26, 26, .22), transparent 70%);
+  filter: blur(12px);
+}
+
+.mindset-poster .why { font-size: clamp(58px, 21vw, 150px); }
+
+.mindset-poster .sub {
+  font-family: var(--font-data);
+  font-size: 10.5px;
+  letter-spacing: .32em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  text-align: center;
+}
+
+/* ---------- milestone / "ego." moment ---------- */
+
+.ego-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--r-lg);
+  padding: 26px 20px;
+  background: var(--red-deep);
+  isolation: isolate;
+  text-align: center;
+}
+.ego-card .ego-bg {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-size: cover;
+  background-position: 50% 62%;
+  opacity: .5;
+  mix-blend-mode: luminosity;
+}
+.ego-card .ego-word {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: clamp(38px, 12vw, 64px);
+  color: #f3ece6;
+  line-height: 1;
+  letter-spacing: -.01em;
+}
+.ego-card .ego-line {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  font-size: clamp(15px, 4.6vw, 22px);
+  line-height: 1.05;
+  color: #ffe9e9;
+  margin-top: 14px;
+}
+.ego-card .ego-nums {
+  font-family: var(--font-data);
+  font-size: clamp(20px, 6vw, 30px);
+  font-weight: 700;
+  color: #fff;
+  margin-top: 10px;
+  letter-spacing: -.02em;
+}
+
+/* ---------- section headers in editorial voice ---------- */
+
+.ed-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 26px 0 12px;
+}
+.ed-head h2 {
+  font-family: var(--font-display);
+  font-size: clamp(20px, 6vw, 30px);
+  text-transform: uppercase;
+  letter-spacing: -.01em;
+  line-height: 1;
+}
+.ed-head .bar { flex: 1; height: 1px; background: var(--line); }
+.ed-head .idx {
+  font-family: var(--font-data);
+  font-size: 11px;
+  color: var(--red);
+  font-weight: 700;
+}
+
+/* ---------- narrow phones ---------- */
+
+@media (max-width: 380px) {
+  .poster { min-height: 300px; padding: 18px 16px 16px; }
+  .poster .metric-row { gap: 14px; }
+}
+
+/* the poster image is decorative; drop the parallax-ish scale when motion is off */
+[data-reduce-motion='1'] .poster-bg { transform: none; }
