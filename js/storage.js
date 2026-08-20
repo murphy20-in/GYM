@@ -46,7 +46,8 @@ const DEFAULTS = {
   habits: null,
   scoreWeights: null,
 
-  hidePrivate: true
+  hidePrivate: true,
+  reduceMotion: false
 };
 
 /* ---------- low level ---------- */
@@ -85,6 +86,8 @@ function emit() { for (const fn of listeners) fn(); }
 export const getSettings = () => Object.assign({}, DEFAULTS, read(K.settings, {}));
 export function saveSettings(patch) {
   write(K.settings, Object.assign(getSettings(), patch));
+  /* lets the shell re-apply preferences such as Reduce Motion immediately */
+  try { window.dispatchEvent(new CustomEvent('gym:settings')); } catch { /* non-browser */ }
   return getSettings();
 }
 export const SETTING_DEFAULTS = DEFAULTS;
@@ -425,16 +428,12 @@ export function weightGoal() {
 
 /* ---------- day log: meals and habits ---------- */
 
-const allDays = () => read(K.days, {});
+export const allDays = () => read(K.days, {});
 
 export function getDayLog(date = new Date()) {
   const d = typeof date === 'string' ? date : dateKey(date);
   const log = allDays()[d];
   return { meals: {}, habits: {}, ...(log || {}) };
-}
-
-export function allDays() {
-  return read(K.days, {});
 }
 
 function saveDayLog(dateStr, log) {
@@ -738,10 +737,186 @@ function bestStreak(pick) {
   return best;
 }
 
+
+/* ---------- strength progression ---------- */
+
+/** Epley estimate. Labelled as an estimate everywhere it is shown. */
+export function estimate1RM(weight, reps) {
+  const w = Number(weight) || 0, r = Number(reps) || 0;
+  if (!w || !r) return 0;
+  if (r === 1) return Math.round(w * 10) / 10;
+  return Math.round(w * (1 + r / 30) * 10) / 10;
+}
+
+/**
+ * Strength picture for one exercise, derived only from logged sets.
+ * Returns null when nothing has been logged — callers show an empty state
+ * rather than a zeroed-out chart.
+ */
+export function strengthFor(exerciseId) {
+  const history = exerciseHistory(exerciseId);
+  if (!history.length) return null;
+
+  const sessions = history.map(h => {
+    const sets = h.sets.filter(s => Number(s.weight) > 0 && Number(s.reps) > 0);
+    if (!sets.length) return null;
+    const top = sets.reduce((a, b) => (estimate1RM(b.weight, b.reps) > estimate1RM(a.weight, a.reps) ? b : a));
+    return {
+      date: h.date,
+      topWeight: Number(top.weight),
+      topReps: Number(top.reps),
+      e1rm: estimate1RM(top.weight, top.reps),
+      volume: sets.reduce((n, s) => n + Number(s.weight) * Number(s.reps), 0),
+      sets: sets.length
+    };
+  }).filter(Boolean);
+
+  if (!sessions.length) return null;
+
+  const best = sessions.reduce((a, b) => (b.e1rm > a.e1rm ? b : a));
+  const last = sessions[0];                 /* exerciseHistory is newest-first */
+  const previous = sessions[1] || null;
+
+  let trend = 'flat';
+  if (previous) {
+    if (last.e1rm > previous.e1rm + 0.5) trend = 'up';
+    else if (last.e1rm < previous.e1rm - 0.5) trend = 'down';
+  }
+
+  return {
+    best, last, previous, trend,
+    sessions: sessions.slice(0, 12),
+    volumeTrend: previous ? last.volume - previous.volume : null
+  };
+}
+
+/* ---------- gym session history ---------- */
+
+/**
+ * One entry per trained day, newest first, with everything the session summary
+ * needs. Only days that actually recorded something appear.
+ */
+export function sessionHistory(limit = 60) {
+  const out = [];
+  for (const [key, session] of Object.entries(allSessions())) {
+    const [date, dayId] = key.split('|');
+    const day = WEEK.find(d => d.id === dayId);
+    if (!day) continue;
+
+    const entries = Object.values(session.ex || {});
+    const doneSets = entries.flatMap(e => e.sets.filter(s => s.done));
+    const exercisesDone = entries.filter(e => e.done).length;
+    if (!doneSets.length && !exercisesDone) continue;
+
+    const dayWeights = allWeights().filter(w => w.date === date);
+    const checkIn = dayWeights.find(w => w.kind === 'checkin') || null;
+    const checkOut = dayWeights.find(w => w.kind === 'checkout') || null;
+
+    out.push({
+      date, dayId, day,
+      title: day.title,
+      checkIn: checkIn ? checkIn.kg : null,
+      checkOut: checkOut ? checkOut.kg : null,
+      sessionChange: (checkIn && checkOut)
+        ? Math.round((checkOut.kg - checkIn.kg) * 10) / 10 : null,
+      durationMin: (session.startedAt && session.endedAt)
+        ? Math.max(1, Math.round((session.endedAt - session.startedAt) / 60000)) : null,
+      exercisesDone,
+      exercisesTotal: exercisesOf(day).length,
+      sets: doneSets.length,
+      reps: doneSets.reduce((n, s) => n + (Number(s.reps) || 0), 0),
+      volume: Math.round(doneSets.reduce((n, s) => n + (Number(s.weight) || 0) * (Number(s.reps) || 0), 0)),
+      avgRpe: (() => {
+        const rpes = doneSets.map(s => Number(s.rpe)).filter(Boolean);
+        return rpes.length ? Math.round((rpes.reduce((a, b) => a + b, 0) / rpes.length) * 10) / 10 : null;
+      })()
+    });
+  }
+  return out.sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, limit);
+}
+
+/* ---------- weigh-in consistency ---------- */
+
+/**
+ * Calendar of weigh-in logging for the month containing `date`.
+ * States: 'full' (both check-in and check-out, or a log on a rest day),
+ * 'partial' (one of the two), 'none', 'rest', 'future'.
+ */
+export function weighInCalendar(date = new Date()) {
+  const start = new Date(date.getFullYear(), date.getMonth(), 1);
+  const end = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+  const today = dateKey();
+  const days = [];
+
+  const cursor = new Date(start);
+  while (cursor <= end) {
+    const key = dateKey(cursor);
+    const day = dayFor(cursor);
+    const w = weightsOn(cursor);
+    const logged = (w.checkin ? 1 : 0) + (w.checkout ? 1 : 0) + (w.manual ? 1 : 0);
+    let state;
+    if (key > today) state = 'future';
+    else if (day.rest) state = logged ? 'full' : 'rest';
+    else if (w.checkin && w.checkout) state = 'full';
+    else if (logged) state = 'partial';
+    else state = 'none';
+    days.push({ date: key, day, state, logged });
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  const counted = days.filter(d => d.state !== 'future');
+  return {
+    monthStart: start,
+    days,
+    logged: counted.filter(d => d.state === 'full' || d.state === 'partial').length,
+    total: counted.length
+  };
+}
+
+/* ---------- workout streak ---------- */
+
+/**
+ * Consecutive trained days. A scheduled rest day carries the streak over
+ * instead of breaking it — Sunday off is the plan, not a lapse.
+ */
+export function workoutStreak() {
+  const sessions = allSessions();
+  const trained = new Set();
+  for (const [key, s] of Object.entries(sessions)) {
+    const [date] = key.split('|');
+    if (Object.values(s.ex || {}).some(e => e.done)) trained.add(date);
+  }
+  if (!trained.size) return { current: 0, longest: 0 };
+
+  const keys = [...trained].sort();
+  let longest = 0, run = 0, current = 0;
+  const cursor = new Date(keys[0] + 'T00:00:00');
+  const today = new Date();
+
+  while (dateKey(cursor) <= dateKey(today)) {
+    const key = dateKey(cursor);
+    if (trained.has(key)) { run++; longest = Math.max(longest, run); }
+    else if (!dayFor(cursor).rest) run = 0;   /* rest days do not break it */
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  current = run;
+  return { current, longest };
+}
+
 /* ---------- data management ---------- */
 
 export async function exportData() {
-  const photos = await getAllPhotos();
+  /* Export is the only backup path, so a failing or slow photo store must never
+     block it — the rest of the data still gets out, with photos omitted. */
+  let photos = [];
+  try {
+    photos = await Promise.race([
+      getAllPhotos(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('photo store timed out')), 5000))
+    ]);
+  } catch (err) {
+    console.warn('Progress photos could not be read for export:', err);
+  }
   return JSON.stringify({
     version: 2, exportedAt: new Date().toISOString(),
     settings: getSettings(),

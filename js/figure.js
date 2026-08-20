@@ -475,7 +475,9 @@ export function animate(svg, spec, opts = {}) {
 
 
   const period = opts.period || 3200;
-  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  /* the OS preference, or the in-app Reduce Motion setting */
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    || document.documentElement.dataset.reduceMotion === '1';
   let raf = 0, running = false, t0 = 0, manual = null, onPhase = opts.onPhase;
 
   function draw(t) {

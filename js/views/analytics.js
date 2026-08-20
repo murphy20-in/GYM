@@ -32,6 +32,7 @@ export function view(params, app) {
   if (TABS.some(t => t.id === askedTab)) activeTab = askedTab;
 
   function paint() {
+    /* session history lives on its own screen; link to it from analytics */
     const settings = store.getSettings();
     const units = settings.units;
     container.replaceChildren();
@@ -44,6 +45,11 @@ export function view(params, app) {
       }))));
 
     /* Tab selector */
+    container.appendChild(el('a', {
+      class: 'btn btn-block', style: 'margin-top:10px', href: '#/sessions',
+      text: 'SESSION HISTORY →'
+    }));
+
     container.appendChild(el('div', { class: 'chips', role: 'group', 'aria-label': 'Analytics category', style: 'margin-top:8px' },
       TABS.map(t => el('button', {
         class: 'chip', type: 'button', html: `${icon(t.icon)}<span>${t.label}</span>`, 'aria-pressed': String(t.id === activeTab),
@@ -410,6 +416,37 @@ export function view(params, app) {
           ]);
         })
       )
+    ]));
+
+    /* Weigh-in consistency — tracks whether a measurement was recorded,
+       never whether the number moved. */
+    const cal = store.weighInCalendar();
+    const lead = (cal.monthStart.getDay() + 6) % 7;
+    const cells = [];
+    for (let i = 0; i < lead; i++) cells.push(el('span', { class: 'cal-cell empty' }));
+    for (const d of cal.days) {
+      const label = d.state === 'full' ? 'logged'
+        : d.state === 'partial' ? 'partly logged'
+        : d.state === 'rest' ? 'rest day'
+        : d.state === 'future' ? 'upcoming' : 'not logged';
+      cells.push(el('span', {
+        class: `cal-cell wi-${d.state}`,
+        title: `${d.date}: ${label}`,
+        text: String(Number(d.date.slice(-2)))
+      }));
+    }
+    container.appendChild(el('section', { class: 'card' }, [
+      el('div', { class: 'row-between' }, [
+        el('p', { class: 'eyebrow', text: 'Weigh-in consistency' }),
+        el('span', { class: 'dim', style: 'font-size:12.5px', text: `${cal.logged} / ${cal.total} days` })
+      ]),
+      el('p', { class: 'dim', style: 'font-size:12px;margin-top:4px',
+        text: cal.monthStart.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }) }),
+      el('div', { class: 'cal-head', style: 'margin-top:12px' },
+        ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map(d => el('span', { text: d }))),
+      el('div', { class: 'cal-grid' }, cells),
+      el('p', { class: 'dim', style: 'font-size:12px;margin-top:10px',
+        text: 'Filled = both weigh-ins logged · amber = one · dim = none · grey = rest day' })
     ]));
   }
 

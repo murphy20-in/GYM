@@ -209,7 +209,9 @@ export function view(params, app) {
       row('Default sets', 'Rows shown in the set logger', stepper(s.defaultSets, 1, 8, 1, v => store.saveSettings({ defaultSets: v }))),
       row('Default reps', 'Placeholder in the reps field', stepper(s.defaultReps, 1, 30, 1, v => store.saveSettings({ defaultReps: v }))),
       row('Rest timer', 'Length of one rest period', stepper(s.restSeconds, 15, 600, 15, v => store.saveSettings({ restSeconds: v }))),
-      row('Auto-start rest', 'Start the timer when a set is ticked', toggle(s.autoRest, v => store.saveSettings({ autoRest: v })))
+      row('Auto-start rest', 'Start the timer when a set is ticked', toggle(s.autoRest, v => store.saveSettings({ autoRest: v }))),
+      row('Reduce motion', 'Holds exercise visuals still and calms transitions',
+        toggle(!!s.reduceMotion, v => { store.saveSettings({ reduceMotion: v }); toast(v ? 'Motion reduced' : 'Motion restored'); }))
     ]));
 
     /* ---- privacy ---- */
@@ -233,7 +235,7 @@ export function view(params, app) {
       const file = fileInput.files?.[0];
       if (!file) return;
       try {
-        store.importData(await file.text());
+        await store.importData(await file.text());
         toast('Data restored');
         paint();
       } catch {
@@ -321,8 +323,18 @@ function priv(text) {
   return el('li', { class: 'cue cue-good' }, [el('i', { text: '✓' }), el('span', { text })]);
 }
 
-function exportBackup() {
-  const blob = new Blob([store.exportData()], { type: 'application/json' });
+async function exportBackup() {
+  let payload;
+  try {
+    /* exportData is async: it reads progress photos out of IndexedDB. Without
+       the await the Blob receives "[object Promise]" and the backup is junk. */
+    payload = await store.exportData();
+  } catch (err) {
+    console.error(err);
+    toast('Could not build the backup', 'close');
+    return;
+  }
+  const blob = new Blob([payload], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = el('a', { href: url, download: `fitness-data-${store.dateKey()}.json` });
   document.body.appendChild(a);

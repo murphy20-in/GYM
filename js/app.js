@@ -9,9 +9,9 @@ import { el, icon } from './ui.js';
 import { mountTimerFab } from './timer.js';
 import * as dashboard from './views/dashboard.js';
 import * as workouts from './views/workouts.js';
-import * as weight from './views/weight.js';
 import * as nutrition from './views/nutrition.js';
 import * as habits from './views/habits.js';
+import * as sessions from './views/sessions.js';
 import * as workoutMode from './views/workoutMode.js';
 import * as detail from './views/detail.js';
 import * as library from './views/library.js';
@@ -40,6 +40,7 @@ const ROUTES = [
   { re: /^\/weight$/, redirect: () => '#/analytics?tab=weight' },
   { re: /^\/nutrition$/, view: nutrition.view, params: () => ({}) },
   { re: /^\/habits$/, view: habits.view, params: () => ({}) },
+  { re: /^\/sessions$/, view: sessions.view, params: () => ({}) },
   { re: /^\/workouts$/, view: workouts.weekView, params: () => ({}) },
   { re: /^\/day\/([\w-]+)$/, view: workouts.view, params: m => ({ id: m[1] }) },
   { re: /^\/workout\/([\w-]+)$/, view: workoutMode.view, params: m => ({ id: m[1] }) },
@@ -168,6 +169,16 @@ function registerSW() {
 }
 
 /* ---------- boot ---------- */
+
+function applyMotionPreference() {
+  try {
+    const reduced = JSON.parse(localStorage.getItem('gym.v1.settings') || '{}').reduceMotion;
+    document.documentElement.dataset.reduceMotion = reduced ? '1' : '0';
+  } catch { document.documentElement.dataset.reduceMotion = '0'; }
+}
+
+applyMotionPreference();
+window.addEventListener('gym:settings', applyMotionPreference);
 
 buildShell();
 mountTimerFab();

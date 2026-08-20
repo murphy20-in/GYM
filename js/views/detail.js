@@ -113,7 +113,9 @@ export function view(params, app) {
     });
     trackingWrap.append(el('h3', { class: 'eyebrow', text: `Track — ${day.name}` }), grid.node);
     actions = el('div', { class: 'detail-actions' }, [complete.node]);
+    trackingWrap.appendChild(strengthCard(ex));
   } else {
+    trackingWrap.appendChild(strengthCard(ex));
     const pr = store.getPR(ex.id);
     const hist = store.exerciseHistory(ex.id).slice(0, 3);
     trackingWrap.append(block('Your Numbers', el('div', { class: 'stack' }, [
@@ -151,6 +153,48 @@ export function view(params, app) {
     node,
     destroy() { fig.destroy(); }
   };
+}
+
+/**
+ * Strength picture for one exercise. Renders an empty state rather than zeros
+ * when nothing has been logged — no invented numbers.
+ */
+function strengthCard(ex) {
+  const units = store.getSettings().units;
+  const st = store.strengthFor(ex.id);
+
+  if (!st) {
+    return block('Strength', el('div', { class: 'empty' }, [
+      el('p', { text: 'No strength data yet.' }),
+      el('p', { style: 'font-size:13px', text: 'Log a set with weight and reps to start tracking progression.' })
+    ]));
+  }
+
+  const arrow = st.trend === 'up' ? '↑ Improving' : st.trend === 'down' ? '↓ Down' : '= Holding';
+  return block('Strength', el('div', {}, [
+    el('div', { class: 'stat-row' }, [
+      el('div', { class: 'stat' }, [
+        el('b', { text: `${st.last.topWeight}×${st.last.topReps}` }),
+        el('span', { text: 'Last session' })
+      ]),
+      el('div', { class: 'stat' }, [
+        el('b', { text: `${st.best.topWeight}×${st.best.topReps}` }),
+        el('span', { text: 'Best' })
+      ]),
+      el('div', { class: 'stat' }, [
+        el('b', { text: String(st.best.e1rm) }),
+        el('span', { text: `Est. 1RM ${units}` })
+      ])
+    ]),
+    el('div', { class: 'row-between', style: 'margin-top:12px' }, [
+      el('span', { class: 'dim', style: 'font-size:12.5px', text: `Trend vs previous session` }),
+      el('span', { class: `tag ${st.trend === 'up' ? 'tag-accent' : ''}`.trim(), text: arrow })
+    ]),
+    st.previous ? el('p', { class: 'dim', style: 'font-size:12.5px;margin-top:8px',
+      text: `Previous: ${st.previous.topWeight}${units} × ${st.previous.topReps} on ${st.previous.date}` }) : null,
+    el('p', { class: 'dim', style: 'font-size:11.5px;margin-top:10px;line-height:1.45',
+      text: 'Estimated 1RM is a calculation from your logged weight and reps (Epley), not a tested maximum.' })
+  ]));
 }
 
 /** Exercise ids adjacent to this one in a day, for prev/next affordances. */
