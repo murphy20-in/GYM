@@ -623,3 +623,18 @@
   overflow: hidden;
   min-height: 200px;
 }
+
+/* ---------- photo comparison ---------- */
+
+.compare-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.compare-cell { min-width: 0; }
+.compare-img {
+  aspect-ratio: 3 / 4;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-soft);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+.compare-img img { width: 100%; height: 100%; object-fit: cover; }

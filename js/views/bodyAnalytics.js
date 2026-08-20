@@ -1,24 +1,19 @@
 /* bodyAnalytics.js — body measurements, progress photos, transformation timeline.
  *
- * Tracks: waist, chest, shoulders, neck, biceps, forearms, thighs, calves (cm)
- * Progress photos: front, side, back
- * Transformation timeline with milestones
+ * 14 circumferences plus body fat, with left/right tracked separately because
+ * they genuinely differ. Every field is optional: a partial entry is valid, and
+ * nothing is inferred to fill a gap.
+ *
+ * Photos are stored in IndexedDB on this device and never leave it.
  */
 
 import { el, icon, sheet, toast, relativeDate } from '../ui.js';
 import * as store from '../storage.js';
 import { getAllPhotos, savePhoto, deletePhoto } from '../db.js';
 
-const MEASUREMENT_FIELDS = [
-  { id: 'waist', label: 'Waist', unit: 'cm', placeholder: 'e.g. 88' },
-  { id: 'chest', label: 'Chest', unit: 'cm', placeholder: 'e.g. 102' },
-  { id: 'shoulders', label: 'Shoulders', unit: 'cm', placeholder: 'e.g. 115' },
-  { id: 'neck', label: 'Neck', unit: 'cm', placeholder: 'e.g. 38' },
-  { id: 'biceps', label: 'Biceps', unit: 'cm', placeholder: 'e.g. 35' },
-  { id: 'forearms', label: 'Forearms', unit: 'cm', placeholder: 'e.g. 30' },
-  { id: 'thighs', label: 'Thighs', unit: 'cm', placeholder: 'e.g. 58' },
-  { id: 'calves', label: 'Calves', unit: 'cm', placeholder: 'e.g. 38' }
-];
+/* Fields come from storage so the entry form, stats and export never drift
+   apart. Legacy single-sided entries are still displayed if present. */
+const MEASUREMENT_FIELDS = store.MEASUREMENT_FIELDS.filter(f => !f.legacy);
 
 const PHOTO_ANGLES = [
   { id: 'front', label: 'Front', icon: 'book' },
@@ -72,11 +67,12 @@ export function view(params, app) {
           keys.map(f => {
             const s = stats[f.id];
             const changeClass = s.change < 0 ? 'tag tag-accent' : s.change > 0 ? 'tag tag-warn' : 'tag';
+            const u = f.unit;
             return el('div', { class: 'stat' }, [
-              el('b', { text: s.current + ' cm' }),
+              el('b', { text: `${s.current}${u === '%' ? '%' : ' ' + u}` }),
               el('span', { text: f.label }),
-              el('span', { class: changeClass, style: 'font-size:10px;margin-top:4px', text: `${s.change > 0 ? '+' : ''}${s.change} cm` }),
-              s.change30 != null && el('span', { class: 'dim', style: 'font-size:10px;margin-top:2px', text: `30d: ${s.change30 > 0 ? '+' : ''}${s.change30} cm` })
+              el('span', { class: changeClass, style: 'font-size:10px;margin-top:4px', text: `${s.change > 0 ? '+' : ''}${s.change} ${u}` }),
+              s.change30 != null && el('span', { class: 'dim', style: 'font-size:10px;margin-top:2px', text: `30d: ${s.change30 > 0 ? '+' : ''}${s.change30} ${u}` })
             ]);
           })
         )
@@ -89,18 +85,20 @@ export function view(params, app) {
         container.appendChild(el('section', { class: 'card', style: 'margin-top:8px' }, [
           el('div', { class: 'row-between' }, [
             el('p', { class: 'eyebrow', text: f.label }),
-            el('span', { class: 'dim', style: 'font-size:12px', text: `${s.current} cm` })
+            el('span', { class: 'dim', style: 'font-size:12px', text: `${s.current} ${f.unit}` })
           ]),
           el('div', { class: 'stat-row stat-4', style: 'margin-top:10px' }, [
-            statBox('Current', `${s.current} cm`),
-            statBox('Previous', s.previous ? `${s.previous} cm` : '—'),
-            statBox('30-Day Δ', s.change30 != null ? `${s.change30 > 0 ? '+' : ''}${s.change30} cm` : '—'),
-            statBox('All-Time Δ', `${s.changeAll > 0 ? '+' : ''}${s.changeAll} cm`)
+            statBox('Current', `${s.current}`),
+            statBox('Previous', s.previous != null ? `${s.previous}` : '—'),
+            statBox('30-day', s.change30 != null ? `${s.change30 > 0 ? '+' : ''}${s.change30}` : '—'),
+            statBox('90-day', (() => { const t = store.measurementTrend(f.id, 90); return t == null ? '—' : `${t > 0 ? '+' : ''}${t}`; })())
           ]),
+          el('p', { class: 'dim', style: 'font-size:11.5px;margin-top:6px',
+            text: `All-time ${s.changeAll > 0 ? '+' : ''}${s.changeAll} ${f.unit} · values in ${f.unit}` }),
           /* Mini history */
           el('div', { style: 'margin-top:10px' }, measurementHistory(f.id).slice(0, 8).map(m => el('div', { class: 'hist-row', style: 'padding:8px 0;border-bottom:1px solid var(--line-soft)' }, [
             el('span', { class: 'dt', text: relativeDate(m.date) }),
-            el('span', { class: 'dim', text: `${m[f.id]} cm` })
+            el('span', { class: 'dim', text: `${m[f.id]} ${f.unit}` })
           ])))
         ]));
       }
@@ -158,7 +156,75 @@ export function view(params, app) {
       ]);
       grid.appendChild(card);
     }
-    container.appendChild(el('section', { class: 'card' }, [grid]));
+    const section = el('section', { class: 'card' }, [grid]);
+
+    /* Side-by-side comparison — the point of progress photos is the delta,
+       which is impossible to see scrolling between two cards. */
+    if (dates.length >= 2) {
+      section.appendChild(el('button', {
+        class: 'btn btn-block', style: 'margin-top:12px', type: 'button', text: 'COMPARE TWO DATES',
+        onclick: () => openCompare(photosByDate, dates)
+      }));
+    }
+    container.appendChild(section);
+  }
+
+  /** Two dates, one angle, shown together with the weight change between them. */
+  function openCompare(photosByDate, dates) {
+    let left = dates[dates.length - 1];   /* oldest */
+    let right = dates[0];                 /* newest */
+    let angle = 'front';
+
+    const body = el('div', { class: 'stack' });
+
+    function paintCompare() {
+      body.replaceChildren();
+
+      body.appendChild(el('div', { class: 'chips', role: 'group', 'aria-label': 'Angle' },
+        PHOTO_ANGLES.map(a => el('button', {
+          class: 'chip', type: 'button', text: a.label.toUpperCase(),
+          'aria-pressed': String(a.id === angle),
+          onclick: () => { angle = a.id; paintCompare(); }
+        }))));
+
+      body.appendChild(el('div', { class: 'compare-grid' }, [left, right].map((d, i) => {
+        const src = photosByDate[d]?.[angle];
+        return el('div', { class: 'compare-cell' }, [
+          el('div', { class: 'compare-img' }, [
+            src ? el('img', { src, alt: `${angle} on ${d}`, loading: 'lazy' })
+                : el('span', { class: 'dim', style: 'font-size:12px', text: 'No photo' })
+          ]),
+          el('p', { class: 'eyebrow', style: 'text-align:center;margin-top:6px', text: i === 0 ? 'Then' : 'Now' }),
+          el('p', { class: 'dim', style: 'font-size:12px;text-align:center', text: relativeDate(d) })
+        ]);
+      })));
+
+      /* weight change across the same span, when both dates have a reading */
+      const w = store.dailyWeights();
+      const wl = w.filter(x => x.date <= left).pop();
+      const wr = w.filter(x => x.date <= right).pop();
+      if (wl && wr && wl.date !== wr.date) {
+        const delta = Math.round((wr.kg - wl.kg) * 10) / 10;
+        body.appendChild(el('p', {
+          class: 'dim', style: 'font-size:13px;text-align:center',
+          text: `${wl.kg} → ${wr.kg} ${store.getSettings().units} (${delta > 0 ? '+' : ''}${delta}) between these dates`
+        }));
+      }
+
+      const picker = (label, value, onPick) => el('label', { class: 'field' }, [
+        el('span', { class: 'eyebrow', text: label }),
+        el('select', { class: 'input', onchange: e => { onPick(e.target.value); paintCompare(); } },
+          dates.slice().reverse().map(d => el('option', { value: d, text: d, selected: d === value })))
+      ]);
+
+      body.appendChild(el('div', { class: 'row', style: 'gap:10px' }, [
+        el('div', { class: 'grow' }, [picker('Then', left, v => { left = v; })]),
+        el('div', { class: 'grow' }, [picker('Now', right, v => { right = v; })])
+      ]));
+    }
+
+    paintCompare();
+    sheet('Compare photos', body);
   }
 
   function renderTransformationTimeline() {
@@ -200,7 +266,7 @@ export function view(params, app) {
         date: m.date,
         type: 'measurement',
         label: 'Measurements updated',
-        detail: MEASUREMENT_FIELDS.filter(f => m[f.id] != null).map(f => `${f.label} ${m[f.id]}cm`).join(', '),
+        detail: MEASUREMENT_FIELDS.filter(f => m[f.id] != null).map(f => `${f.label} ${m[f.id]}${f.unit === '%' ? '%' : 'cm'}`).join(', '),
         icon: 'book'
       });
     }

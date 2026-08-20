@@ -1610,9 +1610,51 @@ export function addMeasurement(data, date = new Date()) {
   return entry;
 }
 
+/**
+ * Tracked body fields. Left/right are separate because they genuinely differ,
+ * and an average would hide the asymmetry that is worth noticing.
+ * Every field is optional — a partial entry is a valid entry.
+ */
+export const MEASUREMENT_FIELDS = [
+  { id: 'bodyFat', label: 'Body fat', unit: '%', hint: 'If you have a reading you trust' },
+  { id: 'neck', label: 'Neck', unit: 'cm' },
+  { id: 'shoulders', label: 'Shoulders', unit: 'cm' },
+  { id: 'chest', label: 'Chest', unit: 'cm' },
+  { id: 'waist', label: 'Waist', unit: 'cm' },
+  { id: 'abdomen', label: 'Abdomen', unit: 'cm' },
+  { id: 'hips', label: 'Hips', unit: 'cm' },
+  { id: 'bicepsL', label: 'Biceps (L)', unit: 'cm', pair: 'biceps' },
+  { id: 'bicepsR', label: 'Biceps (R)', unit: 'cm', pair: 'biceps' },
+  { id: 'forearmL', label: 'Forearm (L)', unit: 'cm', pair: 'forearm' },
+  { id: 'forearmR', label: 'Forearm (R)', unit: 'cm', pair: 'forearm' },
+  { id: 'thighL', label: 'Thigh (L)', unit: 'cm', pair: 'thigh' },
+  { id: 'thighR', label: 'Thigh (R)', unit: 'cm', pair: 'thigh' },
+  { id: 'calfL', label: 'Calf (L)', unit: 'cm', pair: 'calf' },
+  { id: 'calfR', label: 'Calf (R)', unit: 'cm', pair: 'calf' },
+  /* legacy single-sided fields, still read so older entries keep working */
+  { id: 'biceps', label: 'Biceps', unit: 'cm', legacy: true },
+  { id: 'forearms', label: 'Forearms', unit: 'cm', legacy: true },
+  { id: 'thighs', label: 'Thighs', unit: 'cm', legacy: true },
+  { id: 'calves', label: 'Calves', unit: 'cm', legacy: true }
+];
+
+export const MEASUREMENT_KEYS = MEASUREMENT_FIELDS.map(f => f.id);
+
+/** Change over a window for one field, or null when there is nothing to compare. */
+export function measurementTrend(key, days) {
+  const history = allMeasurements().filter(e => e[key] != null);
+  if (history.length < 2) return null;
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - days);
+  const from = history.find(e => e.date >= dateKey(cutoff));
+  if (!from) return null;
+  const latest = history[history.length - 1];
+  if (from.date === latest.date) return null;
+  return Math.round((latest[key] - from[key]) * 10) / 10;
+}
+
 export function getMeasurementsStats() {
   const list = allMeasurements();
-  const keys = ['waist', 'chest', 'shoulders', 'neck', 'biceps', 'forearms', 'thighs', 'calves'];
+  const keys = MEASUREMENT_KEYS;
   const out = {};
   
   for (const key of keys) {
