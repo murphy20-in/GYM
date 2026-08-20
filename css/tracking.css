@@ -463,3 +463,16 @@
   .nav a { font-size: 8.5px; letter-spacing: 0; gap: 2px; padding: 6px 1px; }
   .nav a svg { width: 20px; height: 20px; }
 }
+
+/* ---------- backfill ---------- */
+
+.backfill-habit {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-soft);
+  min-height: var(--tap);
+}

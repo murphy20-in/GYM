@@ -255,6 +255,9 @@ export function view(params, app) {
 
     container.appendChild(el('section', { class: 'card stack' }, [
       el('h3', { class: 'eyebrow', text: 'Data' }),
+      el('a', { class: 'btn btn-block', href: '#/backfill', text: 'ADD PAST DATA' }),
+      el('p', { class: 'dim', style: 'font-size:12px;margin:-2px 0 6px',
+        text: 'Log a day you already trained — weight, meals, habits and workout.' }),
       el('button', { class: 'btn btn-block', type: 'button', text: 'EXPORT MY DATA', onclick: exportBackup }),
       el('button', { class: 'btn btn-block', type: 'button', text: 'IMPORT DATA', onclick: () => fileInput.click() }),
       fileInput,

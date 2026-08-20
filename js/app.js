@@ -13,6 +13,7 @@ import * as workouts from './views/workouts.js';
 import * as nutrition from './views/nutrition.js';
 import * as habits from './views/habits.js';
 import * as sessions from './views/sessions.js';
+import * as backfill from './views/backfill.js';
 import * as workoutMode from './views/workoutMode.js';
 import * as detail from './views/detail.js';
 import * as library from './views/library.js';
@@ -42,6 +43,7 @@ const ROUTES = [
   { re: /^\/nutrition$/, view: nutrition.view, params: () => ({}) },
   { re: /^\/habits$/, view: habits.view, params: () => ({}) },
   { re: /^\/sessions$/, view: sessions.view, params: () => ({}) },
+  { re: /^\/backfill$/, view: backfill.view, params: () => ({}) },
   { re: /^\/workouts$/, view: workouts.weekView, params: () => ({}) },
   { re: /^\/day\/([\w-]+)$/, view: workouts.view, params: m => ({ id: m[1] }) },
   { re: /^\/workout\/([\w-]+)$/, view: workoutMode.view, params: m => ({ id: m[1] }) },

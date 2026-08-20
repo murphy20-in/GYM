@@ -209,6 +209,21 @@ export function completeSession(dayId, date = new Date()) {
   return s;
 }
 
+/**
+ * Set how long a session took, for a workout logged after the fact.
+ * Anchored to midday on that date so the stored timestamps stay on the
+ * intended day in every timezone.
+ */
+export function setSessionDuration(dayId, minutes, date = new Date()) {
+  const s = getSession(dayId, date);
+  const mins = Math.max(1, Math.min(600, Number(minutes) || 0));
+  const base = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12, 0, 0);
+  s.startedAt = base.getTime();
+  s.endedAt = base.getTime() + mins * 60000;
+  saveSession(dayId, date, s);
+  return s;
+}
+
 export function resetSession(dayId, date = new Date()) {
   const all = allSessions();
   delete all[sessionKey(dayId, date)];

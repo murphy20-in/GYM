@@ -33,7 +33,9 @@ const COPY = {
 export function weighInSheet(kind, opts = {}) {
   const copy = COPY[kind] || COPY.manual;
   const units = store.getSettings().units;
-  const existing = store.weightsOn()[kind];
+  /* opts.date lets the same sheet record a past weigh-in from the backfill screen */
+  const when = opts.date instanceof Date ? opts.date : new Date();
+  const existing = store.weightsOn(when)[kind];
   const seed = existing?.kg ?? store.latestWeight()?.kg ?? 75;
 
   const input = el('input', {
@@ -78,7 +80,7 @@ export function weighInSheet(kind, opts = {}) {
           return;
         }
       }
-      const entry = store.addWeight(input.value, kind, new Date(), opts.dayId);
+      const entry = store.addWeight(input.value, kind, when, opts.dayId);
       toast(`${entry.kg} ${units} saved`, 'check');
       ref.close();
       opts.onSaved?.(entry);
