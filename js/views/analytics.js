@@ -9,6 +9,7 @@ import { weightChart } from '../chart.js';
 import { WEEK, dayFor, exercisesOf } from '../data/workouts.js';
 import { getExercise } from '../data/exercises.js';
 import * as store from '../storage.js';
+import { weighInSheet } from './weighin.js';
 
 const PERIODS = ['DAY', 'WEEK', 'MONTH', 'YEAR'];
 let activePeriod = 'WEEK';
@@ -340,15 +341,21 @@ export function view(params, app) {
     const goal = store.weightGoal();
     const series = store.weightSeries(range);
 
-    if (activePeriod === 'DAY') {
-      /* Day weight detail */
+    /* Today's check-in / check-out, always available on the weight tab so a
+       weigh-in can be recorded without starting a workout. */
+    {
       const w = store.weightsOn();
       container.appendChild(el('section', { class: 'card accent-weight' }, [
         el('p', { class: 'eyebrow', text: "Today's Weigh-ins" }),
         el('div', { class: 'check-pair', style: 'margin-top:10px' }, [
-          checkSlot('Check-in', w.checkin, units),
-          checkSlot('Check-out', w.checkout, units)
+          checkSlot('Check-in', w.checkin, units, 'checkin'),
+          checkSlot('Check-out', w.checkout, units, 'checkout')
         ]),
+        el('button', {
+          class: 'btn btn-ghost btn-block', style: 'margin-top:10px', type: 'button',
+          text: 'LOG A ONE-OFF WEIGHT',
+          onclick: () => weighInSheet('manual', { onSaved: paint })
+        }),
         w.checkin && w.checkout ? el('div', { class: 'session-delta', style: 'margin-top:16px' }, [
           el('p', { class: 'eyebrow', text: 'Session Change' }),
           el('p', { class: 'delta-value', text: `${((w.checkout.kg - w.checkin.kg) > 0 ? '+' : '')}${Math.round((w.checkout.kg - w.checkin.kg)*10)/10} ${units}` }),
@@ -356,7 +363,9 @@ export function view(params, app) {
             text: 'Session weight changes are usually influenced by hydration, food, glycogen and fluid loss. Use your longer-term weight trend to evaluate actual weight-loss progress.' })
         ]) : null
       ]));
-    } else {
+    }
+
+    if (activePeriod !== 'DAY') {
       /* Chart + stats */
       container.appendChild(el('section', { class: 'card accent-weight' }, [
         el('p', { class: 'eyebrow', text: `${period} Weight Trend` }),
@@ -728,10 +737,13 @@ export function view(params, app) {
 
   /* ---------- Helpers ---------- */
 
-  function checkSlot(label, entry, units) {
+  function checkSlot(label, entry, units, kind) {
     return el('button', {
       class: `check-slot${entry ? ' filled' : ''}`, type: 'button',
-      onclick: () => { /* placeholder */ }
+      'aria-label': entry
+        ? `${label}: ${entry.kg} ${units}, recorded ${entry.time}. Tap to change.`
+        : `Record ${label.toLowerCase()} weight`,
+      onclick: () => weighInSheet(kind, { onSaved: paint })
     }, [
       el('span', { class: 'eyebrow', text: label }),
       el('strong', { text: entry ? `${entry.kg}` : '—' }),

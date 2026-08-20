@@ -7,6 +7,7 @@
 
 import { el, icon } from './ui.js';
 import { mountTimerFab } from './timer.js';
+import { requestPersistence } from './persist.js';
 import * as dashboard from './views/dashboard.js';
 import * as workouts from './views/workouts.js';
 import * as nutrition from './views/nutrition.js';
@@ -185,3 +186,7 @@ mountTimerFab();
 window.addEventListener('hashchange', render);
 render();
 registerSW();
+
+/* Ask the browser to keep this data out of automatic eviction. Best-effort:
+   it is a no-op where unsupported, and only prompts once. */
+requestPersistence();

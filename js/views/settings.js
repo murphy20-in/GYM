@@ -3,6 +3,7 @@
 import { el, toast, sheet, icon } from '../ui.js';
 import { MEAL_PLAN, DEFAULT_HABITS, TARGET_RANGE, SCORE_WEIGHTS } from '../data/plan.js';
 import * as store from '../storage.js';
+import { storageStatus, requestPersistence, formatBytes, isInstalled, markExported, lastExport } from '../persist.js';
 
 const GOALS = ['Muscle Gain', 'Strength', 'Fat Loss', 'General Fitness'];
 const LEVELS = ['Beginner', 'Intermediate', 'Advanced'];
@@ -244,6 +245,14 @@ export function view(params, app) {
       fileInput.value = '';
     });
 
+    /* ---- durability ---- */
+    const durability = el('section', { class: 'card stack' }, [
+      el('h3', { class: 'eyebrow', text: 'Storage durability' }),
+      el('p', { class: 'dim', style: 'font-size:12.5px', text: 'Checking…' })
+    ]);
+    container.appendChild(durability);
+    paintDurability(durability);
+
     container.appendChild(el('section', { class: 'card stack' }, [
       el('h3', { class: 'eyebrow', text: 'Data' }),
       el('button', { class: 'btn btn-block', type: 'button', text: 'EXPORT MY DATA', onclick: exportBackup }),
@@ -319,6 +328,50 @@ export function view(params, app) {
   return { title: 'Settings', eyebrow: 'Preferences', node: container };
 }
 
+async function paintDurability(section) {
+  const st = await storageStatus();
+  const backup = lastExport();
+  section.replaceChildren();
+  section.appendChild(el('h3', { class: 'eyebrow', text: 'Storage durability' }));
+
+  const ok = st.persisted;
+  section.appendChild(el('div', { class: 'row', style: 'gap:10px;align-items:flex-start' }, [
+    el('span', { class: ok ? 'tag tag-accent' : 'tag tag-warn', text: ok ? 'PROTECTED' : 'BEST-EFFORT' }),
+    el('p', { class: 'dim', style: 'font-size:12.5px;line-height:1.5', text: ok
+      ? 'Your browser has marked this data as persistent, so it will not be cleared automatically.'
+      : 'Your data is saved, but the browser may clear it automatically if storage runs low — or, on iPhone, after about 7 days without opening the app.' })
+  ]));
+
+  if (!ok) {
+    section.appendChild(el('button', {
+      class: 'btn btn-block', type: 'button', text: 'REQUEST PROTECTED STORAGE',
+      onclick: async () => {
+        const r = await requestPersistence({ force: true });
+        toast(r.persisted ? 'Storage protected' : 'Browser declined — add to home screen', r.persisted ? 'check' : 'close');
+        paintDurability(section);
+      }
+    }));
+  }
+
+  if (!isInstalled()) {
+    section.appendChild(el('p', { class: 'dim', style: 'font-size:12px;line-height:1.5',
+      text: 'Add this app to your home screen (Share → Add to Home Screen). Installed apps keep their data far longer, and on iPhone it is the only way to avoid the 7-day clear-out.' }));
+  }
+
+  if (st.usage != null) {
+    section.appendChild(el('p', { class: 'dim', style: 'font-size:12px',
+      text: `Using ${formatBytes(st.usage)}${st.quota ? ' of ' + formatBytes(st.quota) + ' available' : ''}.` }));
+  }
+
+  section.appendChild(el('p', {
+    class: backup.never || backup.days > 14 ? 'tag tag-warn' : 'dim',
+    style: backup.never || backup.days > 14 ? 'display:inline-block' : 'font-size:12px',
+    text: backup.never ? 'NO BACKUP YET — EXPORT BELOW'
+      : backup.days === 0 ? 'Backed up today'
+      : `Last backup ${backup.days} day${backup.days === 1 ? '' : 's'} ago`
+  }));
+}
+
 function priv(text) {
   return el('li', { class: 'cue cue-good' }, [el('i', { text: '✓' }), el('span', { text })]);
 }
@@ -341,6 +394,7 @@ async function exportBackup() {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+  markExported();
   toast('Backup downloaded');
 }
 
