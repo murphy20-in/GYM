@@ -4,7 +4,7 @@
  * come first and fit on one screen, everything else is below the fold.
  */
 
-import { el, exerciseFigure, phaseLadder } from '../ui.js';
+import { el, exerciseFigure, phaseLadder, toast } from '../ui.js';
 import { muscleMapSVG, muscleLegend } from '../muscles.js';
 import { getExercise } from '../data/exercises.js';
 import { getDay, exercisesOf } from '../data/workouts.js';
@@ -59,8 +59,75 @@ export function view(params, app) {
     el('ol', {}, ex.quickForm.map(t => el('li', {}, [el('span', { text: t })])))
   ]);
 
+  /* The flat map renders instantly and works everywhere; 3D is an opt-in
+     upgrade that pulls three.js only when asked for. */
+  const mapHost = el('div', {}, [el('div', { html: muscleMapSVG(ex.primary, ex.secondary) })]);
+  const anatomyHost = el('div', { class: 'anatomy-host', hidden: true });
+  const selectedLabel = el('p', { class: 'dim', style: 'font-size:12.5px;text-align:center;min-height:18px' });
+  let anatomy = null;
+  let mode = '2d';
+
+  const controls3d = el('div', { class: 'row', style: 'gap:6px;margin-top:8px', hidden: true }, [
+    el('button', { class: 'btn btn-sm grow', type: 'button', text: 'FRONT', onclick: () => anatomy?.face('front') }),
+    el('button', { class: 'btn btn-sm grow', type: 'button', text: 'BACK', onclick: () => anatomy?.face('back') }),
+    el('button', { class: 'btn btn-sm grow', type: 'button', text: 'RESET', onclick: () => anatomy?.reset() })
+  ]);
+
+  const toggle3d = el('button', {
+    class: 'btn btn-sm', type: 'button', text: '3D VIEW',
+    'aria-pressed': 'false',
+    onclick: async () => {
+      if (mode === '3d') {
+        mode = '2d';
+        anatomyHost.hidden = true; controls3d.hidden = true; mapHost.hidden = false;
+        toggle3d.textContent = '3D VIEW'; toggle3d.setAttribute('aria-pressed', 'false');
+        selectedLabel.textContent = '';
+        return;
+      }
+      toggle3d.disabled = true;
+      toggle3d.textContent = 'LOADING…';
+      try {
+        if (!anatomy) {
+          const { mountAnatomy } = await import('../anatomy3d.js');
+          anatomy = await mountAnatomy(anatomyHost, {
+            primary: ex.primary, secondary: ex.secondary,
+            onSelect: (key, label) => {
+              const role = ex.primary.includes(key) ? 'primary target'
+                : ex.secondary.includes(key) ? 'assisting' : 'not trained by this exercise';
+              selectedLabel.textContent = `${label} — ${role}`;
+              anatomy.highlight(ex.primary, ex.secondary, key);
+            }
+          });
+        }
+        if (!anatomy) {
+          /* no WebGL — say so rather than showing an empty box */
+          toast('3D is not available on this device', 'close');
+          toggle3d.textContent = '3D VIEW';
+          toggle3d.disabled = false;
+          return;
+        }
+        mode = '3d';
+        anatomyHost.hidden = false; controls3d.hidden = false; mapHost.hidden = true;
+        toggle3d.textContent = 'FLAT VIEW';
+        toggle3d.setAttribute('aria-pressed', 'true');
+      } catch (err) {
+        console.error(err);
+        toast('Could not load the 3D view', 'close');
+        toggle3d.textContent = '3D VIEW';
+      }
+      toggle3d.disabled = false;
+    }
+  });
+
   const muscles = block('Muscles Worked', el('div', {}, [
-    el('div', { html: muscleMapSVG(ex.primary, ex.secondary) }),
+    el('div', { class: 'row-between', style: 'margin-bottom:10px' }, [
+      el('span', { class: 'dim', style: 'font-size:12px', text: 'Tap a muscle in 3D to identify it' }),
+      toggle3d
+    ]),
+    mapHost,
+    anatomyHost,
+    controls3d,
+    selectedLabel,
     el('div', { html: muscleLegend(ex.primary, ex.secondary) }),
     el('p', { class: 'dim', style: 'font-size:12.5px;margin-top:10px', text: ex.targetMuscles.join(' · ') })
   ]));
@@ -151,7 +218,7 @@ export function view(params, app) {
     eyebrow: day ? `${day.name} · ${day.title}` : 'Exercise Library',
     back: day ? `#/day/${day.id}` : '#/library',
     node,
-    destroy() { fig.destroy(); }
+    destroy() { fig.destroy(); anatomy?.destroy(); }
   };
 }
 

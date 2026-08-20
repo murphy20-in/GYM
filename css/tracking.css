@@ -613,3 +613,13 @@
   color: var(--text-2);
   font-variant-numeric: tabular-nums;
 }
+
+/* ---------- 3D anatomy ---------- */
+
+.anatomy-host {
+  border-radius: var(--r);
+  background: radial-gradient(80% 70% at 50% 20%, rgba(255, 26, 26, .10), transparent 70%), #0a0606;
+  border: 1px solid var(--line-soft);
+  overflow: hidden;
+  min-height: 200px;
+}
