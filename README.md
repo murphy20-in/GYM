@@ -16,7 +16,7 @@ A mobile-first, offline-capable gym companion: animated form guides for every ex
 | **Muscle map** | Front + back anatomical silhouette with primary/secondary highlighting |
 | **Workout mode** | One exercise at a time, set/rep/weight/RPE logging, big touch targets |
 | **Gym check-in / check-out** | Weigh in before and after a session; the difference is labelled session weight change, never fat loss |
-| **Weight journey** | Trend chart (7-day moving average), 7D–ALL ranges, goal progress, milestones, full history |
+| **Weight trend engine** | Causal exponentially-weighted trend, windowed rate of change, confidence rating, milestones, projections |
 | **Nutrition tracking** | Your 3-meal plan with per-meal completion and approximate kcal / protein totals |
 | **Habit tracking** | Yes/no, count, quantity and duration habits, streaks and 30-day trends; private habits stay collapsed |
 | **Daily progress score** | Workout + nutrition + habits + weight-*recording*, with configurable weighting |
@@ -25,8 +25,18 @@ A mobile-first, offline-capable gym companion: animated form guides for every ex
 | **Rest timer** | Presets, auto-start after sets, vibration + audio alert |
 | **Search & filter** | Instant search by name/muscle/equipment, muscle-group chips |
 | **PWA / Offline** | Install to home screen, works fully offline via Service Worker |
-| **localStorage persistence** | Sessions, PRs, weight, meals, habits and settings survive browser restarts |
-| **Export / import / scoped reset** | Full JSON backup, restore on another device, and reset one data type at a time |
+| **IndexedDB persistence** | Versioned schema, verified migration, and a rollback snapshot before any destructive operation |
+| **Export / import / scoped reset** | Full JSON backup with a validated import preview, and reset one data type at a time |
+| **Strength progression** | Estimated 1RM (Epley), heaviest / most reps / best set / best session records, and trend vs the previous session |
+| **Set types** | Warm-up, working, drop and failure. Warm-ups are logged but never counted toward volume or records |
+| **Previous values** | One tap copies last session's weight, reps and RPE into the grid |
+| **Plate calculator** | Per-side loading for a target weight, with a configurable bar |
+| **Muscle distribution** | Sets and volume per muscle group, and planned vs actual against the program |
+| **Reports** | Monthly report and year in review, navigable back through previous periods |
+| **3D anatomy** | Interactive muscle map: rotate, zoom, front/back, tap to identify. Lazy-loaded, never on first paint |
+| **Body composition** | 14 circumferences plus body fat, left/right separately, with 30- and 90-day change |
+| **Progress photos** | Front / side / back, with side-by-side date comparison. Stored on-device in IndexedDB |
+| **Data quality** | Missing weigh-ins, implausible values and partial sessions are reported, never silently corrected |
 | **Dark-mode UI** | High contrast, large text, 44px minimum tap targets |
 
 ---
@@ -86,28 +96,40 @@ gym-workout-app/
 ├── .github/workflows/
 │   └── deploy.yml          # GitHub Pages deployment
 ├── css/
-│   ├── base.css            # Tokens, reset, shell, nav
+│   ├── base.css            # Tokens, reset, shell, nav, grain
 │   ├── components.css      # Cards, buttons, figure, muscle map, timer
 │   ├── views.css           # Per-screen layouts
-│   └── tracking.css        # Dashboard, weight, nutrition, habits, calendar
+│   ├── tracking.css        # Dashboard, weight, nutrition, habits, calendar
+│   ├── editorial.css       # Red/black poster layer, display type
+│   └── mindset.css         # Mindset screen
 ├── js/
 │   ├── app.js              # Hash router, app shell
 │   ├── ui.js               # DOM helpers, icons, animated figure component
 │   ├── figure.js           # Forward-kinematics stick-figure engine
 │   ├── muscles.js          # Anatomical muscle map (front + back)
-│   ├── storage.js          # localStorage: sessions, PRs, weight, meals, habits, scoring
+│   ├── storage.js          # Domain layer: sessions, records, weight, meals, habits, scoring
+│   ├── db.js               # IndexedDB: documents, photos, backups
+│   ├── persist.js          # Storage durability + backup reminders
+│   ├── anatomy3d.js        # Procedural 3D muscle map (lazy)
 │   ├── timer.js            # Rest timer (WebAudio + vibration)
 │   ├── chart.js            # SVG weight-trend chart + year bars (no library)
 │   ├── data/
 │   │   ├── archetypes.js   # 53 movement archetypes (poses + equipment)
 │   │   ├── exercises.js    # 57 exercise definitions
 │   │   ├── workouts.js     # Weekly program (7 days)
-│   │   └── plan.js         # Meal plan, habit defaults, milestones, score weights
+│   │   ├── plan.js         # Meal plan, habit defaults, milestones, score weights
+│   │   └── schema.js       # Schema version, validators, import inspection
 │   └── views/
 │       ├── dashboard.js    # "Today" — weight, workout, nutrition, habits, score
 │       ├── daystrip.js     # Shared Mon–Sun selector
-│       ├── weight.js       # Weight journey: trend, milestones, history
 │       ├── weighin.js      # Check-in / check-out capture sheet
+│       ├── analytics.js    # Weight / workout / strength / body / nutrition / habits
+│       ├── report.js       # Monthly report and year in review
+│       ├── sessions.js     # Gym session history
+│       ├── backfill.js     # Log a day that already happened
+│       ├── bodyAnalytics.js# Measurements, photos, transformation timeline
+│       ├── plates.js       # Plate calculator
+│       ├── mindset.js      # Mindset poster
 │       ├── nutrition.js    # Meal plan + completion
 │       ├── habits.js       # Habit tracking, streaks, custom habits
 │       ├── workouts.js     # Weekly schedule + day detail
@@ -117,8 +139,10 @@ gym-workout-app/
 │       ├── progress.js     # Day / week / month / year adherence + records
 │       ├── settings.js     # Profile, goal, plan, habits, data management
 │       └── setgrid.js      # Set/rep/weight/RPE logger
+│   └── vendor/             # three.js (lazy-loaded, MIT — see THREE-LICENSE.txt)
 └── assets/
-    └── icons/              # PWA icons (SVG + PNG)
+    ├── icons/              # PWA icons (SVG + PNG)
+    └── img/                # Red-graded imagery (WebP)
 ```
 
 ---
@@ -165,6 +189,42 @@ storage.js (localStorage)
 2. If the movement pattern is new, add an archetype to `js/data/archetypes.js`
 3. Reference the exercise ID in `js/data/workouts.js`
 4. Done — it appears in the library, detail screen, and workout mode automatically
+
+---
+
+## How the numbers are calculated
+
+Every metric has one formula, applied consistently:
+
+| Metric | Formula |
+|--------|---------|
+| **Volume** | `sum(weight × reps)` over completed **working** sets. Warm-ups excluded; a set with no weight adds nothing |
+| **Trend weight** | Causal exponentially-weighted average of daily readings, half-life 7 days, decaying on elapsed days so gaps do not distort it |
+| **Rate of change** | Least-squares fit over the last 21 days of **raw** readings. Fitting the smoothed line instead would inherit its lag and report a plateau as a loss |
+| **Estimated 1RM** | Epley: `w × (1 + reps/30)`. Labelled an estimate everywhere — it is never a tested max |
+| **Muscle distribution** | A set counts fully for the exercise's primary muscles, half for its secondaries |
+| **Workout adherence** | completed planned sessions ÷ planned sessions |
+| **Meal adherence** | completed meals ÷ planned meals |
+
+**Trend quality** (`GOOD` / `FAIR` / `NOT ENOUGH DATA`) is derived from sample
+count, density and scatter. Goal projections are withheld below the threshold,
+because a projection built on a two-week line is false precision.
+
+---
+
+## Storage
+
+Core data lives in **IndexedDB**, hydrated into memory at boot so every view can
+read synchronously. Writes update memory and flush asynchronously, plus on
+tab-hide and pagehide so a backgrounded phone cannot lose an entry.
+
+The migration from localStorage snapshots to a backup store first, writes in one
+transaction, verifies every document byte-for-byte, and only then records the
+schema version. localStorage is never cleared, so a bad upgrade is recoverable,
+and private mode falls back to it silently.
+
+Imports are validated against a schema before anything is written, with a
+preview showing record counts and exactly what would be skipped.
 
 ---
 

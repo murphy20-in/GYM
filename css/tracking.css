@@ -638,3 +638,15 @@
   overflow: hidden;
 }
 .compare-img img { width: 100%; height: 100%; object-fit: cover; }
+
+/* The score dot carries a glyph as well as a colour, so state survives
+   greyscale, colour-blindness and high-contrast modes. */
+.part-dot {
+  display: grid;
+  place-items: center;
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 1;
+  color: var(--accent-ink, #12030a);
+}
+.part-dot.na { color: var(--text-3); }

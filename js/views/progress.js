@@ -100,6 +100,8 @@ export function view(params, app) {
         : d.day.rest ? 'rest' : 'none';
       cells.push(el('span', {
         class: `cal-cell ${state}`,
+        role: 'img',
+        'aria-label': `${d.date}: ${d.future ? 'upcoming' : state === 'rest' ? 'rest day' : d.score + ' percent'}`,
         title: `${d.date}: ${d.future ? 'upcoming' : d.score + '%'}`,
         text: String(Number(d.date.slice(-2)))
       }));

@@ -9,6 +9,8 @@
 import { el, icon, greeting } from '../ui.js';
 import { dayFor, exercisesOf, nextTrainingDay } from '../data/workouts.js';
 import * as store from '../storage.js';
+import { BY_ID as EX_INDEX } from '../data/exercises.js';
+import { MUSCLE_NAMES } from '../muscles.js';
 import { dayStrip } from './daystrip.js';
 import { weighInSheet, checkPair } from './weighin.js';
 
@@ -249,7 +251,7 @@ export function view(params, app) {
           el('p', { class: 'eyebrow', text: 'Focus' }),
           el('a', { class: 'link-more', href: '#/analytics', text: 'All →' })
         ]),
-        el('ul', { class: 'focus-list', style: 'margin-top:10px' }, insights.map((insight, i) => 
+        el('ul', { class: 'focus-list', style: 'margin-top:10px' }, insights.slice(0, 4).map((insight, i) => 
           el('li', { class: 'focus-item' }, [
             el('span', { class: 'focus-num', text: String(i + 1) }),
             el('div', { class: 'focus-text' }, [
@@ -272,7 +274,14 @@ export function view(params, app) {
     return el('li', {}, [
       el('span', { class: 'grow', text: label }),
       el('span', { class: 'dim', style: 'font-size:12.5px', text: detail }),
-      el('span', { class: 'part-dot' + (value == null ? ' na' : value >= 1 ? ' full' : value > 0 ? ' part' : '') })
+      el('span', {
+        class: 'part-dot' + (value == null ? ' na' : value >= 1 ? ' full' : value > 0 ? ' part' : ''),
+        role: 'img',
+        /* colour alone must not carry the state (a11y) — the glyph and the
+           label say the same thing */
+        'aria-label': value == null ? 'not applicable' : value >= 1 ? 'complete' : value > 0 ? 'partly complete' : 'not started',
+        text: value == null ? '–' : value >= 1 ? '✓' : value > 0 ? '·' : ''
+      })
     ]);
   }
 
@@ -290,8 +299,43 @@ function formatValue(habit, entry) {
 
 /* ---------- Smart Insights Generator ---------- */
 
+/**
+ * Focus items, derived only from logged data.
+ * Every statement quotes the numbers behind it so it can be checked, and
+ * nothing is emitted when the data does not support it.
+ */
 function generateInsights(breakdown, goal, weights, log, habits, plan, targets) {
   const insights = [];
+
+  /* 0. Data quality outranks everything: analytics built on gaps mislead, so
+     say so before offering conclusions drawn from them. */
+  const dq = store.dataQuality();
+  const severe = dq.findings.find(f => f.severity === 'high');
+  if (severe) {
+    insights.push({ title: 'Check your data', detail: `${severe.label}. ${severe.detail}` });
+  }
+
+  /* 0b. Trend confidence, so a young trend is not read as a verdict. */
+  const q = store.trendQuality();
+  if (q.level === 'INSUFFICIENT' && store.getWeights().length > 0) {
+    insights.push({ title: 'Weight trend', detail: `${q.note} ${q.n} weigh-ins so far — the trend sharpens quickly once you log most days.` });
+  }
+
+  /* 0c. Muscle balance: which prescribed work is actually being done. */
+  try {
+    const from = new Date(); from.setDate(from.getDate() - 28);
+    const pva = store.plannedVsActual(from, new Date(), EX_INDEX)
+      .filter(r => r.planned >= 4 && r.ratio != null)
+      .sort((a, b) => a.ratio - b.ratio);
+    const weakest = pva[0];
+    if (weakest && weakest.ratio < 60) {
+      insights.push({
+        title: 'Training balance',
+        detail: `${MUSCLE_NAMES[weakest.muscle] || weakest.muscle} has received ${weakest.actual} of the ${weakest.planned} sets your program prescribes over the last four weeks.`
+      });
+    }
+  } catch { /* balance needs a month of data; silence is correct without it */ }
+
   const today = store.dateKey();
   const weekAgo = store.dateKey(new Date(Date.now() - 7 * 86400000));
   const monthAgo = store.dateKey(new Date(Date.now() - 30 * 86400000));
