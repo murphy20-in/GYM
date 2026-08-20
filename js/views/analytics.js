@@ -46,10 +46,10 @@ export function view(params, app) {
       }))));
 
     /* Tab selector */
-    container.appendChild(el('a', {
-      class: 'btn btn-block', style: 'margin-top:10px', href: '#/sessions',
-      text: 'SESSION HISTORY →'
-    }));
+    container.appendChild(el('div', { class: 'row', style: 'gap:8px;margin-top:10px' }, [
+      el('a', { class: 'btn grow', href: '#/sessions', text: 'SESSIONS →' }),
+      el('a', { class: 'btn grow', href: '#/report', text: 'REPORTS →' })
+    ]));
 
     /* Data quality: report gaps rather than letting them quietly skew every
        number below. */

@@ -1223,6 +1223,165 @@ export function workoutStreak() {
 }
 
 
+
+/* ---------- volume and muscle distribution ----------
+ *
+ * Every figure here has one formula, applied consistently:
+ *   volume = sum(weight x reps) over completed working sets
+ * Warm-ups are excluded (see isWorkingSet). A set with no weight contributes
+ * no volume rather than being counted as zero-weight work.
+ */
+
+/** Volume, sets and reps for a date range, broken down by exercise. */
+export function volumeBetween(fromDate, toDate) {
+  const from = dateKey(fromDate), to = dateKey(toDate);
+  const byExercise = {};
+  let volume = 0, sets = 0, reps = 0, sessions = 0, durationMin = 0;
+
+  for (const [key, session] of Object.entries(allSessions())) {
+    const [date] = key.split('|');
+    if (date < from || date > to) continue;
+
+    const working = Object.entries(session.ex || {})
+      .flatMap(([id, e]) => e.sets.filter(isWorkingSet).map(x => ({ id, ...x })));
+    if (!working.length) continue;
+
+    sessions++;
+    if (session.startedAt && session.endedAt) {
+      durationMin += Math.max(0, Math.round((session.endedAt - session.startedAt) / 60000));
+    }
+
+    for (const w of working) {
+      const v = (Number(w.weight) || 0) * (Number(w.reps) || 0);
+      volume += v; sets++; reps += Number(w.reps) || 0;
+      const slot = byExercise[w.id] || (byExercise[w.id] = { volume: 0, sets: 0, reps: 0 });
+      slot.volume += v; slot.sets++; slot.reps += Number(w.reps) || 0;
+    }
+  }
+  return { volume: Math.round(volume), sets, reps, sessions, durationMin, byExercise };
+}
+
+/**
+ * Sets and volume per muscle group.
+ * A set counts fully toward the exercise's primary muscles and at half toward
+ * its secondaries — assisting muscles do real but lesser work, and counting
+ * them equally would make every pressing day look like a shoulder day.
+ */
+export function muscleDistribution(fromDate, toDate, exerciseIndex) {
+  const { byExercise } = volumeBetween(fromDate, toDate);
+  const out = {};
+  const add = (muscle, sets, volume) => {
+    const slot = out[muscle] || (out[muscle] = { sets: 0, volume: 0 });
+    slot.sets += sets; slot.volume += volume;
+  };
+
+  for (const [id, agg] of Object.entries(byExercise)) {
+    const ex = exerciseIndex[id];
+    if (!ex) continue;
+    for (const m of ex.primary || []) add(m, agg.sets, agg.volume);
+    for (const m of ex.secondary || []) add(m, agg.sets * 0.5, agg.volume * 0.5);
+  }
+
+  for (const slot of Object.values(out)) {
+    slot.sets = Math.round(slot.sets * 10) / 10;
+    slot.volume = Math.round(slot.volume);
+  }
+  return out;
+}
+
+/**
+ * What the program prescribes versus what was actually trained.
+ * More useful than a bare completion count: it shows *which* muscles are
+ * quietly being dropped when sessions get skipped.
+ */
+export function plannedVsActual(fromDate, toDate, exerciseIndex) {
+  const from = dateKey(fromDate), to = dateKey(toDate);
+  const planned = {}, actual = {};
+
+  const cursor = new Date(fromDate);
+  while (dateKey(cursor) <= to) {
+    const day = dayFor(cursor);
+    if (!day.rest) {
+      for (const id of exercisesOf(day)) {
+        const ex = exerciseIndex[id];
+        if (!ex) continue;
+        for (const m of ex.primary || []) planned[m] = (planned[m] || 0) + 1;
+      }
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  const dist = muscleDistribution(fromDate, toDate, exerciseIndex);
+  for (const [m, v] of Object.entries(dist)) actual[m] = v.sets;
+
+  const muscles = [...new Set([...Object.keys(planned), ...Object.keys(actual)])];
+  return muscles.map(m => ({
+    muscle: m,
+    planned: Math.round((planned[m] || 0) * 10) / 10,
+    actual: Math.round((actual[m] || 0) * 10) / 10,
+    ratio: planned[m] ? Math.round(((actual[m] || 0) / planned[m]) * 100) : null
+  })).sort((a, b) => b.actual - a.actual);
+}
+
+/* ---------- records ---------- */
+
+/**
+ * Every kind of record for one exercise, from working sets only.
+ * Returns null rather than zeros when the exercise has never been logged.
+ */
+export function recordsFor(exId) {
+  const hist = exerciseHistory(exId);
+  const sets = hist.flatMap(h => h.sets.filter(isWorkingSet).map(s => ({ ...s, date: h.date })))
+    .filter(s => Number(s.weight) > 0 && Number(s.reps) > 0);
+  if (!sets.length) return null;
+
+  const best = (pick) => sets.reduce((a, b) => (pick(b) > pick(a) ? b : a));
+  const heaviest = best(s => Number(s.weight));
+  const mostReps = best(s => Number(s.reps));
+  const biggestSet = best(s => Number(s.weight) * Number(s.reps));
+  const best1rm = best(s => estimate1RM(s.weight, s.reps));
+
+  /* best single-session volume */
+  let bestSession = null;
+  for (const h of hist) {
+    const v = h.sets.filter(isWorkingSet)
+      .reduce((n, s) => n + (Number(s.weight) || 0) * (Number(s.reps) || 0), 0);
+    if (v > 0 && (!bestSession || v > bestSession.volume)) bestSession = { date: h.date, volume: Math.round(v) };
+  }
+
+  return {
+    heaviest: { weight: Number(heaviest.weight), reps: Number(heaviest.reps), date: heaviest.date },
+    mostReps: { weight: Number(mostReps.weight), reps: Number(mostReps.reps), date: mostReps.date },
+    bestSet: { weight: Number(biggestSet.weight), reps: Number(biggestSet.reps), date: biggestSet.date,
+               volume: Math.round(Number(biggestSet.weight) * Number(biggestSet.reps)) },
+    best1RM: { value: estimate1RM(best1rm.weight, best1rm.reps), weight: Number(best1rm.weight),
+               reps: Number(best1rm.reps), date: best1rm.date },
+    bestSession,
+    totalSessions: hist.length
+  };
+}
+
+/** Records set within a date range, for the weekly and monthly reports. */
+export function recentPRs(fromDate, toDate, exerciseIndex) {
+  const from = dateKey(fromDate), to = dateKey(toDate);
+  const out = [];
+  for (const id of Object.keys(exerciseIndex)) {
+    const r = recordsFor(id);
+    if (!r) continue;
+    for (const [kind, rec, label] of [
+      ['weight', r.heaviest, 'Heaviest'],
+      ['reps', r.mostReps, 'Most reps'],
+      ['e1rm', r.best1RM, 'Estimated 1RM']
+    ]) {
+      if (rec.date >= from && rec.date <= to) {
+        out.push({ exerciseId: id, name: exerciseIndex[id].name, kind, label, date: rec.date,
+                   weight: rec.weight, reps: rec.reps, value: rec.value });
+      }
+    }
+  }
+  return out.sort((a, b) => (a.date < b.date ? 1 : -1));
+}
+
 /* ---------- data quality ---------- */
 
 /**
